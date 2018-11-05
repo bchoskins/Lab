@@ -3,21 +3,63 @@
 merge = read.delim2('combined_TMS_data.csv', header = TRUE, sep = ",", dec = ",", stringsAsFactor = FALSE)
 merge = merge[c(-1)]
 
-
 #switches tms_analyte concentrations from character to numeric values for easier 
 # mathematical manipulation
 merge[,5:78]<- sapply(merge[,5:78],as.numeric)
+
+# Run a check on columns with NAs: set threshold to >= 25% complete affected data per column 
+#First, subset affected data
+library(dplyr)
+affectedData <- select(filter(merge, Affected == 1), c(1:78))
+# Total number of affected persons
+affectedSum = sum(affectedData$Affected)
+#Checks a 25% threshold based on total number of NAs in each column
+#new_data <- merge[, colSums(is.na(affectedData)) <= affectedSum*0.75]
+#Checks a 75% threshold based on total number of NAs in each column
+new_data <- merge[, colSums(is.na(affectedData)) <= affectedSum*0.25]
+
+
+#assign new index value based on lab_no + birth_year
+#new_data$new_index <- sequence(rle(new_data$birth_year)$lengths)
+
+#install.packages('data.table')
+library(data.table)
+library(dplyr)
+setDT(new_data)[, diff := lab_no - lag(lab_no, 1L), by = birth_year]
+new_data[1,66] = 0
+
+
+# Attempt to run MICE method of filling missing values
+#First, remove categorical value
+new_data2 <- new_data[-c(2)]
+# check missingness from data
+pMiss <- function(x){sum(is.na(x))/length(x)*100}
+apply(new_data2, 2, pMiss)
+#look for missing data pattern
+library(mice)
+md.pattern(new_data2)
+
+
+
+#seed missing values
+library(missForest)
+data.mis <- prodNA(new_data, noNA = 0.1)
+#remove non-numerics
+data.mis <- subset(data.mis, select = -c(1:4))
+#
+library(mice)
+imputed_data <- mice(data.mis, m=5, maxit=50, method = 'pmm', seed = 500)
 
 # Deals with missing values 
 # replacing NAs with mean of column values
 # *** maybe look into different way of doing this so
 # when we go to predict
-for (i in 5:ncol(merge)) {
-  #merge[is.na(merge[,i]), i] <- mean(merge[,i], na.rm = TRUE)
-  merge[,i]= ifelse(is.na(merge[,i]),
-                    ave(merge[,i], FUN = function(x) 
-                      mean(x, na.rm = TRUE)), merge[,i])
-}
+# for (i in 5:ncol(merge)) {
+#   #merge[is.na(merge[,i]), i] <- mean(merge[,i], na.rm = TRUE)
+#   merge[,i]= ifelse(is.na(merge[,i]),
+#                     ave(merge[,i], FUN = function(x) 
+#                       mean(x, na.rm = TRUE)), merge[,i])
+# }
 
 # Encoding the affected ids as factor
 merge$Affected = factor(merge$Affected, levels = c(0, 1))
