@@ -18,16 +18,31 @@ affectedSum = sum(affectedData$Affected)
 #Checks a 75% threshold based on total number of NAs in each column
 new_data <- merge[, colSums(is.na(affectedData)) <= affectedSum*0.25]
 
-
 #assign new index value based on lab_no + birth_year
-#new_data$new_index <- sequence(rle(new_data$birth_year)$lengths)
-
 #install.packages('data.table')
+labNum <- new_data[c(1)]
+
 library(data.table)
 library(dplyr)
-setDT(new_data)[, diff := lab_no - lag(lab_no, 1L), by = birth_year]
-new_data[1,66] = 0
+labs <- data.table(labs)
+setDT(labNum)[, diff := lab_no - lag(lab_no, 1L)]
+new_data[1,2] = 0
+labNum$index = 0
+labNum[1,3]=1
 
+for (i in 2:length(labs$lab_no)) {
+  labs$index[i] <- ifelse(labs$lab_no[i] > labs$lab_no[i-1], labs$lab_no[i] - labs$lab_no[i-1] + labs$index[i-1], labs$lab_no[i] + labs$index[i-1])
+}
+
+# for (i in 2:length(new_data$diff)) {
+#   new_data$index[i] <- ifelse(new_data$lab_no[i] > new_data$lab_no[i-1], new_data$diff[i] + new_data$index[i-1], new_data$lab_no[i] + new_data$index[i-1])
+#   # if (new_data$lab_no[i] > new_data$lab_no[i-1]){
+#   #   new_data$index[i] = new_data$diff[i] + new_data$index[i-1]
+#   # }
+#   # else {
+#   #   new_data$index[i] = new_data$lab_no[i] + new_data$index[i-1]
+#   # }
+# }
 
 # Attempt to run MICE method of filling missing values
 #First, remove categorical value
