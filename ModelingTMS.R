@@ -1,31 +1,66 @@
 #Modeling newly indexed data
 data = read.delim2('indexedTMS.csv', header = TRUE, sep = ",", dec = ",", stringsAsFactor = FALSE)
-#data = data[c(-1)]
+data = data[c(-1,-2)]
 
+#switches tms_analyte concentrations from character to numeric values for easier 
+# mathematical manipulation
+data[,5:65]<- sapply(data[,5:65],as.numeric)
+
+nrow(unique(data['new_index']))
+# issue, 5005357b of 505936 are unique index numbers because
+# of some that share index/year but nor gender/concentrations
+
+data$index = 0
+data$index[1] = 1
+for (i in 2:length(data$index)) {
+  print(i)
+  data$index[i] <- ifelse(data$index[i] == data$index[i-1], data$index[i] + 1, data$index[i])
+}
+
+
+nrow(unique(data['index']))
+  
 #starting over with new dataset name data
+head(data)
 
+#install.packages('tidyverse')
+library(tidyverse)
+data_nested <- data %>% 
+  # may have to change what we group by 
+  # because of duplicate ids in a year
+  # with differing genders
+  group_by(new_index) %>%
+  nest()
 
+data_unnested <- data_nested %>%
+  unnest()
 
-# Attempt to run MICE method of filling missing values
-#First, remove categorical value
-new_data2 <- new_data[-c(2)]
-# check missingness from data
-pMiss <- function(x){sum(is.na(x))/length(x)*100}
-apply(new_data2, 2, pMiss)
-#look for missing data pattern
-library(mice)
-md.pattern(new_data2)
+#not identical because when  by grouping by new index,
+# some obsrvations in the same year shared the same lab 
+# number but were of a different gender
+identical(data, data_unnested)
 
-
-
-#seed missing values
-library(missForest)
-data.mis <- prodNA(new_data, noNA = 0.1)
-#remove non-numerics
-data.mis <- subset(data.mis, select = -c(1:4))
-#
-library(mice)
-imputed_data <- mice(data.mis, m=5, maxit=50, method = 'pmm', seed = 500)
+# 
+# # Attempt to run MICE method of filling missing values
+# #First, remove categorical value
+# new_data2 <- new_data[-c(2)]
+# # check missingness from data
+# pMiss <- function(x){sum(is.na(x))/length(x)*100}
+# apply(new_data2, 2, pMiss)
+# #look for missing data pattern
+# library(mice)
+# md.pattern(new_data2)
+# 
+# 
+# 
+# #seed missing values
+# library(missForest)
+# data.mis <- prodNA(new_data, noNA = 0.1)
+# #remove non-numerics
+# data.mis <- subset(data.mis, select = -c(1:4))
+# #
+# library(mice)
+# imputed_data <- mice(data.mis, m=5, maxit=50, method = 'pmm', seed = 500)
 
 # Deals with missing values 
 # replacing NAs with mean of column values
