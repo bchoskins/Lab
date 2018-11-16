@@ -11,21 +11,29 @@ nrow(unique(data['new_index']))
 # of some that share index/year but nor gender/concentrations
 
 library(dplyr)
+#grab all affected data 
 affectedData <- select(filter(data, Affected == 1), c(1:65))
 
+#grab all duplicate data
 duplicate <- data[duplicated(data[1]),]
+
+#pull out the one duplicate that has an affected
 saved <- select(filter(duplicate, Affected == 1), c(1:65))
 
+#remove duplicates from data set
 final <- dplyr::setdiff(data, duplicate)
 
+#add the saved observation back into the dataset
 dataFinal <- dplyr::union(saved, final, by = "new_index")
 
+#reorder
 dataFinal <- arrange(dataFinal, birth_year, new_index)
 
+#remove the saved affecteds duplcate
 dataFinal <- dataFinal[-c(83431),]
 
+#check for any duplicates
 nrow(unique(data['new_index']))
 
-
-#write data so we don't have to reindex every time (takes way too long)
+#write data so we don't have to redp every time 
 write.csv(dataFinal, file = "goodData.csv")
