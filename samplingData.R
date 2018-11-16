@@ -8,12 +8,26 @@ data = data[c(-1)]
 affectedData <- select(filter(data, Affected == 1), c(1:65))
 
 
-for ( i in affectedData) {
+n <- 500
+
+i <- -n:n
+
+ix <- rep(which(data$Affected == 1), each = length(i)) + i
+
+unique(ix[ix > 0 & ix <= nrow(data)])
+
+trial <- data[unique(ix[ix > 0 & ix <= nrow(data)]), ]
+
+
+
+
+for ( i in affectedData$new_index) {
   print(i)
 }
 
 for (i in data$new_index) {
   #sample <- 
+  
 }
   
 
