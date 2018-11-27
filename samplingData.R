@@ -4,42 +4,22 @@ data = read.delim2('goodData.csv', header = TRUE, sep = ",", dec = ",", stringsA
 data = data[c(-1)]
 
 
-
+library(dplyr)
 affectedData <- select(filter(data, Affected == 1), c(1:65))
 
 
-n <- 500
-
-i <- -n:n
-
-ix <- rep(which(data$Affected == 1), each = length(i)) + i
-
-unique(ix[ix > 0 & ix <= nrow(data)])
-
-trial <- data[unique(ix[ix > 0 & ix <= nrow(data)]), ]
-
-
-
-
-for ( i in affectedData$new_index) {
+temp = vector()
+for (i in affectedData$new_index) {
   print(i)
+  y = which(data$new_index == i) 
+  temp = append(temp, data[sample(y-200:y+200, 50, replace = FALSE), "new_index"])
 }
 
-for (i in data$new_index) {
-  #sample <- 
-  
-}
-  
+#check no affecteds were sampled
 
+#KS test
 
-
-
-
-
-
-
-
-
+#Begin Modeling
 
 
 
