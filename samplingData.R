@@ -3,11 +3,11 @@
 data = read.delim2('goodData.csv', header = TRUE, sep = ",", dec = ",", stringsAsFactor = FALSE)
 data = data[c(-1)]
 
-
 library(dplyr)
 affectedData <- select(filter(data, Affected == 1), c(1:65))
 
-
+#Pull a 50 observation conotrol group based on distance from each affected id (+-200)
+#and store into a list to use as a total control group
 temp = vector()
 for (i in affectedData$new_index) {
   print(i)
@@ -16,33 +16,43 @@ for (i in affectedData$new_index) {
 }
 
 #check no affecteds were sampled
+temp <- sort(temp)
+controls <- as.data.frame(temp)
+#make sure there are no duplicate control values
+controls <- unique(controls)
+#make sure there are no affected ids within the control group
+non_overlap <- dplyr::anti_join(controls, affectedData, by = c("temp" = "new_index"))
+
+#quick double check for no affecteds in control group
+# for(i in non_overlap$temp) {
+#  print(i)
+#   if( i %in% affectedData$new_index ){
+#     print(TRUE)
+#   }
+# }
 
 #KS test
+ks.test(non_overlap, affectedData$new_index)
+#p-value 2.262e-08, fail to reject null hpyothesis that the two samples were drawn from different distributions 
 
 #Begin Modeling
 
+#grab the rest of the columns for control data
+model_data <- select(filter(data, new_index %in% non_overlap$temp), c(1:65))
 
-
-
-
-
-
+model_data[,4:65]<- sapply(model_data[,4:65],as.numeric)
 
 library(tidyverse)
-data_nested <- data %>% 
-  # may have to change what we group by 
-  # because of duplicate ids in a year
-  # with differing genders
+data_nested <- model_data %>% 
   group_by(new_index) %>%
   nest()
 
 data_unnested <- data_nested %>%
   unnest()
 
-#not identical because when  by grouping by new index,
-# some obsrvations in the same year shared the same lab 
-# number but were of a different gender
-identical(data, data_unnested)
+#still not same for some reason?
+identical(model_data, data_unnested)
+
 
 # 
 # # Attempt to run MICE method of filling missing values
