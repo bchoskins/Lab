@@ -10,45 +10,68 @@ affectedData <- select(filter(data, Affected == 1), c(1:65))
 #and store into a list to use as a total control group
 
 #while loop to make sure we pass KS Test
-ks$p.value = 0
-while(ks$p.value < 0.2) {
+#Control group 1
+ks1 = 0
+ks1$p.value = 0
+while(ks1$p.value < 0.2) {
   #print("here")
-  temp = vector()
+  temp1 = vector()
   for (i in affectedData$new_index) {
     #print(i)
     # y here is the row number of affected ids in the full dataset
-    y = which(data$new_index == i) 
+    y1 = which(data$new_index == i) 
     #print(y)
-    temp = append(temp, data[sample((y-200):(y+200), 50, replace = FALSE), "new_index"])
+    temp1 = append(temp1, data[sample((y1-200):(y1+200), 50, replace = FALSE), "new_index"])
   }
-  temp <- sort(temp)
-  controls <- as.data.frame(temp)
+  temp1 <- sort(temp1)
+  control1 <- as.data.frame(temp1)
   #make sure there are no duplicate control values
-  controls <- unique(controls)
+  control1 <- unique(control1)
   #make sure there are no affected ids within the control group
-  non_overlap <- dplyr::anti_join(controls, affectedData, by = c("temp" = "new_index"))
+  non_overlap1 <- dplyr::anti_join(control1, affectedData, by = c("temp1" = "new_index"))
   
   #KS test
-  ks <-ks.test(non_overlap, affectedData$new_index)
+  ks1 <- ks.test(non_overlap1, affectedData$new_index)
   #p-value = 1, fail to reject null hpyothesis that the two samples are not significantly different
-  print(ks)
+  print(ks1)
 }
 
-# #quick double check for no affecteds in control group
-# for(i in non_overlap$temp) {
-#  print(i)
-#   if( i %in% affectedData$new_index ){
-#     print(TRUE)
-#   }
-# }
+group1 <- select(filter(data, new_index %in% non_overlap1$temp), c(1:65))
 
 
-#Begin Modeling
+#Control Group 2
+ks2 = 0
+ks2$p.value = 0
+while(ks2$p.value < 0.2) {
+  #print("here")
+  temp2 = vector()
+  for (i in affectedData$new_index) {
+    #print(i)
+    # y here is the row number of affected ids in the full dataset
+    y2 = which(data$new_index == i) 
+    #print(y)
+    temp2 = append(temp2, data[sample((y2-200):(y2+200), 50, replace = FALSE), "new_index"])
+  }
+  temp2 <- sort(temp2)
+  control2 <- as.data.frame(temp2)
+  #make sure there are no duplicate control values
+  control2 <- unique(control2)
+  #make sure there are no affected ids within the control group
+  non_overlap2 <- dplyr::anti_join(control2, affectedData, by = c("temp2" = "new_index"))
+  
+  #KS test
+  ks2 <- ks.test(non_overlap2, affectedData$new_index)
+  #p-value = 1, fail to reject null hpyothesis that the two samples are not significantly different
+  print(ks2)
+}
 
-#grab the rest of the columns for control data
-model_data <- select(filter(data, new_index %in% non_overlap$temp), c(1:65))
+group2 <- select(filter(data, new_index %in% non_overlap2$temp), c(1:65))
 
-model_data[,4:65]<- sapply(model_data[,4:65],as.numeric)
+# make sure to have two different control groups
+library(dplyr)
+group2 <- anti_join(group1, group2, by = "new_index")
+
+#Begin Modeling on group 2
 
 library(tidyverse)
 data_nested <- model_data %>% 
@@ -60,6 +83,8 @@ data_unnested <- data_nested %>%
 
 #still not same for some reason?
 identical(model_data, data_unnested)
+
+
 
 
 # 
