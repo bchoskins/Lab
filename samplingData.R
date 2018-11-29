@@ -6,24 +6,35 @@ data = data[c(-1)]
 library(dplyr)
 affectedData <- select(filter(data, Affected == 1), c(1:65))
 
-#Pull a 50 observation conotrol group based on distance from each affected id (+-200)
+#Pull a 50 observation control group based on distance from each affected id (+-200)
 #and store into a list to use as a total control group
-temp = vector()
-for (i in affectedData$new_index) {
-  print(i)
-  y = which(data$new_index == i) 
-  temp = append(temp, data[sample(y-200:y+200, 50, replace = FALSE), "new_index"])
+
+#while loop to make sure we pass KS Test
+ks$p.value = 0
+while(ks$p.value < 0.2) {
+  #print("here")
+  temp = vector()
+  for (i in affectedData$new_index) {
+    #print(i)
+    # y here is the row number of affected ids in the full dataset
+    y = which(data$new_index == i) 
+    #print(y)
+    temp = append(temp, data[sample((y-200):(y+200), 50, replace = FALSE), "new_index"])
+  }
+  temp <- sort(temp)
+  controls <- as.data.frame(temp)
+  #make sure there are no duplicate control values
+  controls <- unique(controls)
+  #make sure there are no affected ids within the control group
+  non_overlap <- dplyr::anti_join(controls, affectedData, by = c("temp" = "new_index"))
+  
+  #KS test
+  ks <-ks.test(non_overlap, affectedData$new_index)
+  #p-value = 1, fail to reject null hpyothesis that the two samples are not significantly different
+  print(ks)
 }
 
-#check no affecteds were sampled
-temp <- sort(temp)
-controls <- as.data.frame(temp)
-#make sure there are no duplicate control values
-controls <- unique(controls)
-#make sure there are no affected ids within the control group
-non_overlap <- dplyr::anti_join(controls, affectedData, by = c("temp" = "new_index"))
-
-#quick double check for no affecteds in control group
+# #quick double check for no affecteds in control group
 # for(i in non_overlap$temp) {
 #  print(i)
 #   if( i %in% affectedData$new_index ){
@@ -31,9 +42,6 @@ non_overlap <- dplyr::anti_join(controls, affectedData, by = c("temp" = "new_ind
 #   }
 # }
 
-#KS test
-ks.test(non_overlap, affectedData$new_index)
-#p-value 2.262e-08, fail to reject null hpyothesis that the two samples were drawn from different distributions 
 
 #Begin Modeling
 
