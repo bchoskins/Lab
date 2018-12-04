@@ -87,33 +87,48 @@ group2 <- anti_join(group1, group2, by = "new_index")
 #GOOD UNTIL HERE
 #***Begin Modeling on group 2***
 
+# changing of variable types
+newdata[,c(5:65)]<- sapply(newdata[,5:65],as.numeric)
+
+newdata$gender = as.factor(newdata$gender)
+newdata$Affected = as.factor(newdata$Affected)
+
 
 library(VIM)
 library(lattice)
-
-#Find missing values
-library(missForest)
-group2.mis <- prodNA(group2, noNA = 0.1)
-
-#remove categorical variables
-group2.mis <- subset(group2.mis, select = -c(gender))
-
-#install MICE
-#install.packages("mice")
 library(mice)
-md.pattern(group2.mis)
 
-#visualize missing data
-#install.packages("VIM")
-library(VIM)
-mice_plot <- aggr(group2, col=c('navyblue','yellow'),
-                    numbers=TRUE, sortVars=TRUE,
-                    labels=names(group2.mis), cex.axis=.7,
-                    gap=3, ylab=c("Missing data","Pattern"))
+md.pattern(newdata)
 
-#impute the data
+newdata_miss = aggr(newdata, col=mdc(1:2), numbers=TRUE, sortVars=TRUE, 
+                   labels=names(newdata), cex.axis=.7, gap=3, 
+                   ylab=c("Proportion of missingness","Missingness Pattern"))
 
-imputed_data <- mice(group2.mis, m=5, maxit = 50, method ='pmm', seed = 500)
+mice_imputes = mice(newdata, m=5, maxit = 40)
+
+# #Find missing values 
+# library(missForest)
+# group2.mis <- prodNA(group2, noNA = 0.1)
+# 
+# #remove categorical variables
+# group2.mis <- subset(group2.mis, select = -c(gender))
+# 
+# #install MICE
+# #install.packages("mice")
+# library(mice)
+# md.pattern(group2.mis)
+# 
+# #visualize missing data
+# #install.packages("VIM")
+# library(VIM)
+# mice_plot <- aggr(group2, col=c('navyblue','yellow'),
+#                     numbers=TRUE, sortVars=TRUE,
+#                     labels=names(group2.mis), cex.axis=.7,
+#                     gap=3, ylab=c("Missing data","Pattern"))
+# 
+# #impute the data
+# 
+# imputed_data <- mice(group2.mis, m=5, maxit = 50, method ='pmm', seed = 500)
 
 
 
