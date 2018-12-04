@@ -5,6 +5,18 @@ data = data[c(-1)]
 
 library(dplyr)
 affectedData <- select(filter(data, Affected == 1), c(1:65))
+nonAffectedData <- select(filter(data, Affected == 0), c(1:65))
+
+#remove rows with missing values so we do not have to impute
+#Run a check on columns with NAs: set threshold to remove rows blow threshold  
+library(dplyr) 
+# #Checks a 90% threshold based on total number of NAs in each column
+# out all affected back in large data set for sampling
+# #sort by birth_year then lab_no
+newdata <- nonAffectedData[rowSums(is.na(nonAffectedData)) == 0,] %>%
+           dplyr::union(., affectedData) %>%
+           arrange(., birth_year, new_index)
+
 
 #Pull a 50 observation control group based on distance from each affected id (+-200)
 #and store into a list to use as a total control group
@@ -19,9 +31,9 @@ while(ks1$p.value < 0.2) {
   for (i in affectedData$new_index) {
     #print(i)
     # y here is the row number of affected ids in the full dataset
-    y1 = which(data$new_index == i) 
-    #print(y)
-    temp1 = append(temp1, data[sample((y1-200):(y1+200), 50, replace = FALSE), "new_index"])
+    y1 = which(newdata$new_index == i) 
+    #print(y1)
+    temp1 = append(temp1, newdata[sample((y1-250):(y1+250), 50, replace = FALSE), "new_index"])
   }
   temp1 <- sort(temp1)
   control1 <- as.data.frame(temp1)
@@ -36,7 +48,7 @@ while(ks1$p.value < 0.2) {
   print(ks1)
 }
 
-group1 <- select(filter(data, new_index %in% non_overlap1$temp), c(1:65))
+group1 <- select(filter(newdata, new_index %in% non_overlap1$temp), c(1:65))
 
 
 #Control Group 2
@@ -48,9 +60,9 @@ while(ks2$p.value < 0.2) {
   for (i in affectedData$new_index) {
     #print(i)
     # y here is the row number of affected ids in the full dataset
-    y2 = which(data$new_index == i) 
+    y2 = which(newdata$new_index == i) 
     #print(y)
-    temp2 = append(temp2, data[sample((y2-200):(y2+200), 50, replace = FALSE), "new_index"])
+    temp2 = append(temp2, newdata[sample((y2-250):(y2+250), 50, replace = FALSE), "new_index"])
   }
   temp2 <- sort(temp2)
   control2 <- as.data.frame(temp2)
@@ -65,16 +77,21 @@ while(ks2$p.value < 0.2) {
   print(ks2)
 }
 
-group2 <- select(filter(data, new_index %in% non_overlap2$temp), c(1:65))
+group2 <- select(filter(newdata, new_index %in% non_overlap2$temp), c(1:65))
 
 # make sure to have two different control groups
 library(dplyr)
 group2 <- anti_join(group1, group2, by = "new_index")
 
-#Begin Modeling on group 2
-group2[,4:65]<- sapply(group2[,4:65],as.numeric)
 
-#Find missing values 
+#GOOD UNTIL HERE
+#***Begin Modeling on group 2***
+
+
+library(VIM)
+library(lattice)
+
+#Find missing values
 library(missForest)
 group2.mis <- prodNA(group2, noNA = 0.1)
 
@@ -95,7 +112,7 @@ mice_plot <- aggr(group2, col=c('navyblue','yellow'),
                     gap=3, ylab=c("Missing data","Pattern"))
 
 #impute the data
-#maybe have to get rid of birth_year and Affected
+
 imputed_data <- mice(group2.mis, m=5, maxit = 50, method ='pmm', seed = 500)
 
 
@@ -113,7 +130,7 @@ data_unnested <- data_nested %>%
 
 
 
-# 
+
 # # Attempt to run MICE method of filling missing values
 # #First, remove categorical value
 # new_data2 <- new_data[-c(2)]
