@@ -7,11 +7,9 @@ library(dplyr)
 affectedData <- select(filter(data, Affected == 1), c(1:65))
 nonAffectedData <- select(filter(data, Affected == 0), c(1:65))
 
-#remove rows with missing values so we do not have to impute
-#Run a check on columns with NAs: set threshold to remove rows blow threshold  
 library(dplyr) 
-# #Checks a 90% threshold based on total number of NAs in each column
-# out all affected back in large data set for sampling
+#remove rows with missing values so we do not have to impute
+#add back in the affected data since it includes NAs so we can sample
 # #sort by birth_year then lab_no
 newdata <- nonAffectedData[rowSums(is.na(nonAffectedData)) == 0,] %>%
            dplyr::union(., affectedData) %>%
@@ -84,27 +82,43 @@ library(dplyr)
 group2 <- anti_join(group1, group2, by = "new_index")
 
 
-#GOOD UNTIL HERE
 #***Begin Modeling on group 2***
 
 # changing of variable types
 newdata[,c(5:65)]<- sapply(newdata[,5:65],as.numeric)
 
+library(plyr)
+newdata$gender <- revalue(newdata$gender, c("U"= NA))
+
 newdata$gender = as.factor(newdata$gender)
+
 newdata$Affected = as.factor(newdata$Affected)
 
+#***GOOD TO HERE***
 
-library(VIM)
-library(lattice)
-library(mice)
+#install.packages("missMDA")
+# matrix <- as.matrix(newdata)
+# dim(matrix) <- dim(newdata)
+# 
+# library(missMDA)
+# nbdim <- estim_ncpPCA(matrix)
+# 
+# res.comp <- MIPCA(newdata, ncp = nbdim, nboot = 1000)
 
-md.pattern(newdata)
 
-newdata_miss = aggr(newdata, col=mdc(1:2), numbers=TRUE, sortVars=TRUE, 
-                   labels=names(newdata), cex.axis=.7, gap=3, 
-                   ylab=c("Proportion of missingness","Missingness Pattern"))
 
-mice_imputes = mice(newdata, m=5, maxit = 40)
+
+# library(VIM)
+# library(lattice)
+# library(mice)
+# 
+# md.pattern(newdata)
+# 
+# newdata_miss = aggr(newdata, col=mdc(1:2), numbers=TRUE, sortVars=TRUE, 
+#                    labels=names(newdata), cex.axis=.7, gap=3, 
+#                    ylab=c("Proportion of missingness","Missingness Pattern"))
+# 
+# mice_imputes = mice(newdata, m=5, maxit = 40)
 
 # #Find missing values 
 # library(missForest)
