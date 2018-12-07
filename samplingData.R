@@ -96,8 +96,37 @@ group2 <- anti_join(group1, group2, by = "new_index")
 
 #***Good to here***
 #use group1 to impute Affected NAs then pull back out
+affectedData[,c(5:65)]<- sapply(affectedData[,5:65],as.numeric)
 
-imputeData <-
+affectedData$gender = as.factor(affectedData$gender)
+
+affectedData$Affected = as.factor(affectedData$Affected)
+
+library(gtools)
+imputeData <- smartbind(group1, affectedData)
+
+imputeData <- arrange(imputeData, birth_year, new_index)
+
+library(mice)
+md.pattern(imputeData)
+
+library(VIM)
+aggr_plot <- aggr(imputeData, col=c('navyblue','red'), numbers=TRUE, sortVars=TRUE, 
+                  labels=names(imputeData), cex.axis=.7, gap=3, 
+                  ylab=c("Histogram of missing data","Pattern"))
+
+tempData <- mice(imputeData,m=5,maxit=5,meth='cart',seed=500)
+summary(tempData)
+
+completedData <- complete(tempData, 1)
+
+xyplot(tempData, ASA ~ C0.C16 + C0.C18 + C14.1.C12.1 + C5.DC.C16 + C5.DC.C8
+       + Leu.Ala, pch=18,cex=1)
+
+densityplot(tempData)
+
+stripplot(tempData, pch = 20, cex = 1.2)
+
 
 #***Begin Modeling on group 2***
 library(tidyverse)
