@@ -7,7 +7,13 @@ library(dplyr)
 affectedData <- select(filter(data, Affected == 1), c(1:65))
 nonAffectedData <- select(filter(data, Affected == 0), c(1:65))
 
-library(dplyr) 
+library(plyr)
+# gets rid of two unneeded categories for gender and allows to remove all nonAffected
+# data missing values below 
+nonAffectedData$gender <- revalue(nonAffectedData$gender, c("U"= NA))
+nonAffectedData$gender[nonAffectedData$gender==""] <- NA
+
+# library(dplyr) 
 #remove rows with missing values so we do not have to impute
 #add back in the affected data since it includes NAs so we can sample
 # #sort by birth_year then lab_no
@@ -15,6 +21,12 @@ newdata <- nonAffectedData[rowSums(is.na(nonAffectedData)) == 0,] %>%
            dplyr::union(., affectedData) %>%
            arrange(., birth_year, new_index)
 
+# changing of variable types
+newdata[,c(5:65)]<- sapply(newdata[,5:65],as.numeric)
+
+newdata$gender = as.factor(newdata$gender)
+
+newdata$Affected = as.factor(newdata$Affected)
 
 #Pull a 50 observation control group based on distance from each affected id (+-200)
 #and store into a list to use as a total control group
@@ -82,73 +94,12 @@ library(dplyr)
 group2 <- anti_join(group1, group2, by = "new_index")
 
 
+#***Good to here***
+#use group1 to impute Affected NAs then pull back out
+
+imputeData <-
+
 #***Begin Modeling on group 2***
-
-# changing of variable types
-newdata[,c(5:65)]<- sapply(newdata[,5:65],as.numeric)
-
-library(plyr)
-newdata$gender <- revalue(newdata$gender, c("U"= NA))
-
-newdata$gender = as.factor(newdata$gender)
-
-newdata$Affected = as.factor(newdata$Affected)
-
-#***GOOD TO HERE***
-
-#install.packages("missMDA")
-# matrix <- as.matrix(newdata)
-# dim(matrix) <- dim(newdata)
-# 
-# library(missMDA)
-# nbdim <- estim_ncpPCA(matrix)
-# 
-# res.comp <- MIPCA(newdata, ncp = nbdim, nboot = 1000)
-
-
-
-
-# library(VIM)
-# library(lattice)
-# library(mice)
-# 
-# md.pattern(newdata)
-# 
-# newdata_miss = aggr(newdata, col=mdc(1:2), numbers=TRUE, sortVars=TRUE, 
-#                    labels=names(newdata), cex.axis=.7, gap=3, 
-#                    ylab=c("Proportion of missingness","Missingness Pattern"))
-# 
-# mice_imputes = mice(newdata, m=5, maxit = 40)
-
-# #Find missing values 
-# library(missForest)
-# group2.mis <- prodNA(group2, noNA = 0.1)
-# 
-# #remove categorical variables
-# group2.mis <- subset(group2.mis, select = -c(gender))
-# 
-# #install MICE
-# #install.packages("mice")
-# library(mice)
-# md.pattern(group2.mis)
-# 
-# #visualize missing data
-# #install.packages("VIM")
-# library(VIM)
-# mice_plot <- aggr(group2, col=c('navyblue','yellow'),
-#                     numbers=TRUE, sortVars=TRUE,
-#                     labels=names(group2.mis), cex.axis=.7,
-#                     gap=3, ylab=c("Missing data","Pattern"))
-# 
-# #impute the data
-# 
-# imputed_data <- mice(group2.mis, m=5, maxit = 50, method ='pmm', seed = 500)
-
-
-
-
-
-
 library(tidyverse)
 data_nested <- group2 %>% 
   group_by(new_index) %>%
