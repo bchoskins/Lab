@@ -198,42 +198,7 @@ data_unnested <- data_nested %>%
   unnest()
 
 
-
-
-# # Attempt to run MICE method of filling missing values
-# #First, remove categorical value
-# new_data2 <- new_data[-c(2)]
-# # check missingness from data
-# pMiss <- function(x){sum(is.na(x))/length(x)*100}
-# apply(new_data2, 2, pMiss)
-# #look for missing data pattern
-# library(mice)
-# md.pattern(new_data2)
-# 
-# 
-# 
-# #seed missing values
-# library(missForest)
-# data.mis <- prodNA(new_data, noNA = 0.1)
-# #remove non-numerics
-# data.mis <- subset(data.mis, select = -c(1:4))
-# #
-# library(mice)
-# imputed_data <- mice(data.mis, m=5, maxit=50, method = 'pmm', seed = 500)
-
-# Deals with missing values 
-# replacing NAs with mean of column values
-# *** maybe look into different way of doing this so
-# when we go to predict
-# for (i in 5:ncol(merge)) {
-#   #merge[is.na(merge[,i]), i] <- mean(merge[,i], na.rm = TRUE)
-#   merge[,i]= ifelse(is.na(merge[,i]),
-#                     ave(merge[,i], FUN = function(x) 
-#                       mean(x, na.rm = TRUE)), merge[,i])
-# }
-
-# Encoding the affected ids as factor
-merge$Affected = factor(merge$Affected, levels = c(0, 1))
+#***IGNORE BELOW HERE***
 
 # time to take sample of 1000 that includes all Affected ("1") ids
 # this approach will be to take a small sample of only the
