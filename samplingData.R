@@ -1,10 +1,12 @@
-#Sample data
+#Sample data/Imputation of missing affected data
 
 data = read.delim2('goodData.csv', header = TRUE, sep = ",", dec = ",", stringsAsFactor = FALSE)
 data = data[c(-1)]
 
 library(dplyr)
+#used later for imputing values (has missing data)
 affectedData <- select(filter(data, Affected == 1), c(1:65))
+#use for getting control groups (will remove missing data below)
 nonAffectedData <- select(filter(data, Affected == 0), c(1:65))
 
 library(plyr)
@@ -15,7 +17,8 @@ nonAffectedData$gender[nonAffectedData$gender==""] <- NA
 
 # library(dplyr) 
 #remove rows with missing values so we do not have to impute
-#add back in the affected data since it includes NAs so we can sample
+#add back in the affected data since it includes NAs so we can sample 
+# based on all NA ids
 # #sort by birth_year then lab_no
 newdata <- nonAffectedData[rowSums(is.na(nonAffectedData)) == 0,] %>%
            dplyr::union(., affectedData) %>%
@@ -58,6 +61,7 @@ while(ks1$p.value < 0.2) {
   print(ks1)
 }
 
+# this attaches all data because above just gets ids for sample 
 group1 <- select(filter(newdata, new_index %in% non_overlap1$temp), c(1:65))
 
 
@@ -87,6 +91,7 @@ while(ks2$p.value < 0.2) {
   print(ks2)
 }
 
+# this attaches all data because above just gets ids for sample 
 group2 <- select(filter(newdata, new_index %in% non_overlap2$temp), c(1:65))
 
 # make sure to have two different control groups
@@ -94,6 +99,7 @@ library(dplyr)
 group2 <- anti_join(group1, group2, by = "new_index")
 
 #use group1 to impute Affected NAs then pull back out
+# need to first get both datasets to have matching types
 affectedData[,c(5:65)]<- sapply(affectedData[,5:65],as.numeric)
 
 affectedData$gender = as.factor(affectedData$gender)
@@ -101,12 +107,11 @@ affectedData$gender = as.factor(affectedData$gender)
 affectedData$Affected = as.factor(affectedData$Affected)
 
 library(gtools)
-# need to add affected data with NAs back in to impute
+# need to add affected data with NAs back in to impute w/ group 1
 imputeData <- smartbind(group1, affectedData)
 #sort so that affected data is integrated within the control data
 imputeData <- arrange(imputeData, birth_year, new_index)
 
-#***Good to here***
 
 library(mice)
 # check pattern of missing values in data
@@ -120,11 +125,10 @@ aggr_plot <- aggr(imputeData, col=c('navyblue','red'), numbers=TRUE, sortVars=TR
                   ylab=c("Histogram of missing data","Pattern"))
 
 # impute data to fill missing values using 'cart' method to account for categorical variables
-# lso, attempted using 'rf' (random forest) method Note: default method 'pmm' 
-# does not work 
+# lso, attempted using 'rf' (random forest) method Note: default method 'pmm' does not work 
 # Info found at: https://www.rdocumentation.org/packages/mice/versions/3.3.0/topics/mice
 # Step-by-step: https://www.youtube.com/watch?v=zX-pacwVyvU
-tempData <- mice(imputeData,m=5,maxit=5,meth='cart',seed=500)
+# tempData <- mice(imputeData,m=5,maxit=5,meth='cart',seed=500)
 # logged errors on 6 variables (all observations too similar) 
 #BRINGS ISSUE 6 variables have too similar of data for every record in prediciton
 # > head(tempData$loggedEvents, 10)
@@ -143,29 +147,45 @@ tempData <- mice(imputeData,m=5,maxit=5,meth='cart',seed=500)
 # trial to remove 6 variables imputation doesn't like 
 trialData <- subset(imputeData, select = -c(18, 23, 24, 28, 30, 47))
 
-tempData <- mice(trialData,m=5,maxit=5,meth='cart',seed=500)
-rfData <- mice(trialData,m=5,maxit=5,meth='rf',seed=500)
+# tempData <- mice(trialData,m=5,maxit=5,meth='cart',seed=500)
+# rfData <- mice(trialData,m=5,maxit=5,meth='rf',seed=500)
+
+# https://stefvanbuuren.name/mice/reference/mice.impute.rf.html
+#random forest imputation of missing data
+rfImpute <- mice(trialData, meth = 'rf', ntree = 10)
 # no logged events after removing vars
 
-summary(tempData)
-summary(rfData)
+# densityplot(tempData)
+# densityplot(rfData)
+densityplot(rfImpute)
 
-completedData <- complete(tempData, 1)
-completedDataRF <- complete(rfData, 3)
+# stripplot(tempData, pch = 20, cex = 1.2)
+# stripplot(rfData, pch = 20, cex = 1.2)
+stripplot(rfImpute, pch = 20, cex = 1.2)
 
-xyplot(tempData, ASA ~ C0.C16 + C0.C18 + C14.1.C12.1 + C5.DC.C16 + C5.DC.C8 + 
-         Leu.Ala, pch=18,cex=1)
+# completedData <- complete(tempData, 1)
+# completedDataRF <- complete(rfData, 3)
+#pull one of the datasets from the generated imputations
+completeDatarf <- complete(rfImpute, 3)
 
-xyplot(rfData,  ASA ~ C0.C16 + C0.C18 + C14.1.C12.1 + C5.DC.C16 + C5.DC.C8 +
-       Leu.Ala, pch=18,cex=1)
+# add back 6 vars we didn't use to impute
+#get them back from where we started
+pBack <- subset(imputeData, select = c(18, 23, 24, 28, 30, 47))
+#attach and reorder
+full <- cbind(completeDatarf, pBack) %>%
+  .[, c(1:17, 60, 18:21, 61, 62, 22:24, 63, 25, 64, 26:41, 65, 42:59)]
+library(arsenal)
+#check that the variables are in correct order
+summary(compare(imputeData, full))
 
-densityplot(tempData)
-densityplot(rfData)
+# pull out affected data to have a full data set based on imputed data
+# put this full data back into entire dataset from earlier
+newAffected <- select(filter(full, Affected == 1), c(1:65))
+fullData <- select(filter(newdata, Affected == 0), c(1:65)) %>%
+  dplyr::union(., newAffected) %>%
+  arrange(., birth_year, new_index)
 
-stripplot(tempData, pch = 20, cex = 1.2)
-stripplot(rfData, pch = 20, cex = 1.2)
-
-
+#***GOOD TO HERE***
 
 
 #***Begin Modeling on group 2***
