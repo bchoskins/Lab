@@ -93,8 +93,6 @@ group2 <- select(filter(newdata, new_index %in% non_overlap2$temp), c(1:65))
 library(dplyr)
 group2 <- anti_join(group1, group2, by = "new_index")
 
-
-#***Good to here***
 #use group1 to impute Affected NAs then pull back out
 affectedData[,c(5:65)]<- sapply(affectedData[,5:65],as.numeric)
 
@@ -103,29 +101,71 @@ affectedData$gender = as.factor(affectedData$gender)
 affectedData$Affected = as.factor(affectedData$Affected)
 
 library(gtools)
+# need to add affected data with NAs back in to impute
 imputeData <- smartbind(group1, affectedData)
-
+#sort so that affected data is integrated within the control data
 imputeData <- arrange(imputeData, birth_year, new_index)
 
+#***Good to here***
+
 library(mice)
+# check pattern of missing values in data
 md.pattern(imputeData)
 
 library(VIM)
-aggr_plot <- aggr(imputeData, col=c('navyblue','red'), numbers=TRUE, sortVars=TRUE, 
-                  labels=names(imputeData), cex.axis=.7, gap=3, 
+# view plot of data pattern for missing values
+#shows 7 variables with any missing data in affected data
+aggr_plot <- aggr(imputeData, col=c('navyblue','red'), numbers=TRUE, sortVars=TRUE,
+                  labels=names(imputeData), cex.axis=.7, gap=3,
                   ylab=c("Histogram of missing data","Pattern"))
 
+# impute data to fill missing values using 'cart' method to account for categorical variables
+# lso, attempted using 'rf' (random forest) method Note: default method 'pmm' 
+# does not work 
+# Info found at: https://www.rdocumentation.org/packages/mice/versions/3.3.0/topics/mice
+# Step-by-step: https://www.youtube.com/watch?v=zX-pacwVyvU
 tempData <- mice(imputeData,m=5,maxit=5,meth='cart',seed=500)
+# logged errors on 6 variables (all observations too similar) 
+#BRINGS ISSUE 6 variables have too similar of data for every record in prediciton
+# > head(tempData$loggedEvents, 10)
+# it im         dep meth                                                out
+# 1   1  1         ASA cart C14.OH, C16.OH, C16.OH.C16, C18.OH, C18.1.OH, C5.1
+# 2   1  1      C0.C16 cart C14.OH, C16.OH, C16.OH.C16, C18.OH, C18.1.OH, C5.1
+# 3   1  1      C0.C18 cart C14.OH, C16.OH, C16.OH.C16, C18.OH, C18.1.OH, C5.1
+# 4   1  1 C14.1.C12.1 cart C14.OH, C16.OH, C16.OH.C16, C18.OH, C18.1.OH, C5.1
+# 5   1  1   C5.DC.C16 cart C14.OH, C16.OH, C16.OH.C16, C18.OH, C18.1.OH, C5.1
+# 6   1  1    C5.DC.C8 cart C14.OH, C16.OH, C16.OH.C16, C18.OH, C18.1.OH, C5.1
+# 7   1  1     Leu.Ala cart C14.OH, C16.OH, C16.OH.C16, C18.OH, C18.1.OH, C5.1
+# 8   1  2         ASA cart C14.OH, C16.OH, C16.OH.C16, C18.OH, C18.1.OH, C5.1
+# 9   1  2      C0.C16 cart C14.OH, C16.OH, C16.OH.C16, C18.OH, C18.1.OH, C5.1
+# 10  1  2      C0.C18 cart C14.OH, C16.OH, C16.OH.C16, C18.OH, C18.1.OH, C5.1
+
+# trial to remove 6 variables imputation doesn't like 
+trialData <- subset(imputeData, select = -c(18, 23, 24, 28, 30, 47))
+
+tempData <- mice(trialData,m=5,maxit=5,meth='cart',seed=500)
+rfData <- mice(trialData,m=5,maxit=5,meth='rf',seed=500)
+# no logged events after removing vars
+
 summary(tempData)
+summary(rfData)
 
 completedData <- complete(tempData, 1)
+completedDataRF <- complete(rfData, 3)
 
-xyplot(tempData, ASA ~ C0.C16 + C0.C18 + C14.1.C12.1 + C5.DC.C16 + C5.DC.C8
-       + Leu.Ala, pch=18,cex=1)
+xyplot(tempData, ASA ~ C0.C16 + C0.C18 + C14.1.C12.1 + C5.DC.C16 + C5.DC.C8 + 
+         Leu.Ala, pch=18,cex=1)
+
+xyplot(rfData,  ASA ~ C0.C16 + C0.C18 + C14.1.C12.1 + C5.DC.C16 + C5.DC.C8 +
+       Leu.Ala, pch=18,cex=1)
 
 densityplot(tempData)
+densityplot(rfData)
 
 stripplot(tempData, pch = 20, cex = 1.2)
+stripplot(rfData, pch = 20, cex = 1.2)
+
+
 
 
 #***Begin Modeling on group 2***
