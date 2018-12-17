@@ -185,8 +185,9 @@ fullData <- select(filter(newdata, Affected == 0), c(1:65)) %>%
   dplyr::union(., newAffected) %>%
   arrange(., birth_year, new_index)
 
+#******************
 #***GOOD TO HERE***
-
+#******************
 
 #***Begin Modeling on group 2***
 library(tidyverse)
@@ -197,9 +198,9 @@ data_nested <- group2 %>%
 data_unnested <- data_nested %>%
   unnest()
 
-
+#***********************
 #***IGNORE BELOW HERE***
-
+#***********************
 # time to take sample of 1000 that includes all Affected ("1") ids
 # this approach will be to take a small sample of only the
 # affected ids rows and columns (69), then take separate random subset of
