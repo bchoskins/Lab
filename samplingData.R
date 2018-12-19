@@ -191,12 +191,22 @@ fullData <- select(filter(newdata, Affected == 0), c(1:65)) %>%
 
 #***Begin Modeling on group 2***
 library(tidyverse)
+#this creates a tibble for each person in order to model individually
 data_nested <- group2 %>% 
   group_by(new_index) %>%
   nest()
 
 data_unnested <- data_nested %>%
   unnest()
+
+#make sure no data was modified
+which(group2 != data_unnested, arr.ind=TRUE)
+
+# build a linear model for each individual??
+# obs_models <- data_nested %>%
+#   mutate(model = map(.x = group2, ~lm(formula = Affected~gender + ., data = .x)))
+
+
 
 #***********************
 #***IGNORE BELOW HERE***
