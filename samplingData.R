@@ -190,23 +190,71 @@ fullData <- select(filter(newdata, Affected == 0), c(1:65)) %>%
 #******************
 
 #***Begin Modeling on group 2***
-library(tidyverse)
-#this creates a tibble for each person in order to model individually
-data_nested <- group2 %>% 
-  group_by(new_index) %>%
-  nest()
-
-data_unnested <- data_nested %>%
-  unnest()
-
-#make sure no data was modified
-which(group2 != data_unnested, arr.ind=TRUE)
-
-# build a linear model for each individual??
-# obs_models <- data_nested %>%
-#   mutate(model = map(.x = group2, ~lm(formula = Affected~gender + ., data = .x)))
+# library(tidyverse)
+# #this creates a tibble for each person in order to model individually
+# data_nested <- group2 %>% 
+#   group_by(new_index) %>%
+#   nest()
+# 
+# data_unnested <- data_nested %>%
+#   unnest()
+# 
+# #make sure no data was modified
+# which(group2 != data_unnested, arr.ind=TRUE)
 
 
+
+#****Look below, cross validation not working because not enough affecteds
+library(rsample)
+set.seed(42)
+
+#prepare the intial split object
+data_split <- initial_split(group2, prop=0.75)
+# Extract the training dataframe 
+training_data <- training(data_split)
+# Extract the testing data frame
+testing_data <- testing(data_split)
+
+set.seed(42)
+cv_split <- vfold_cv(training_data, v =5)
+
+cv_data <- cv_split %>%
+  mutate(
+    train = map(splits, ~training(.x)),
+    validate = map(splits, ~testing(.x))
+  )
+
+# Build a model using the train data for each fold 
+# of the cross validation
+cv_models_lr <- cv_data %>%
+  mutate(model = map(train, ~glm(formula = Affected~., data = .x, 
+                                 family = "binomial", maxit = 100)))
+# Extract the first model and validate 
+model <- cv_models_lr$model[[1]]
+validate <- cv_models_lr$validate[[1]]
+
+# Prepare binary vector of actual Attrition values in validate
+validate_actual <- validate$Affected == "Yes"
+
+# Predict the probabilities for the observations in validate
+validate_prob <- predict(model, validate, type = "response")
+
+# Prepare binary vector of predicted Attrition values for validate
+validate_predicted <- validate_prob > 0.5
+
+library(Metrics)
+
+# Compare the actual & predicted performance visually using a table
+table(validate_actual, validate_predicted)
+
+# Calculate the accuracy
+accuracy(validate_actual, validate_predicted)
+
+# Calculate the precision
+precision(validate_actual, validate_predicted)
+
+# Calculate the recall
+recall(validate_actual, validate_predicted)
 
 #***********************
 #***IGNORE BELOW HERE***

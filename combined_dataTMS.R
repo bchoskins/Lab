@@ -1,4 +1,4 @@
-#Logistic Regression of Affected ~ All Metabolites + sex + birth year + lab_no
+t#Logistic Regression of Affected ~ All Metabolites + sex + birth year + lab_no
 
 dataset1 = read.delim2('INMSP2004to2017TMSData.txt', header = TRUE, sep = "|", dec = ",", stringsAsFactor = FALSE)
 # Only want lab_no, tms_analyte, concentration
