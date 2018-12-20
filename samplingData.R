@@ -115,14 +115,14 @@ imputeData <- arrange(imputeData, birth_year, new_index)
 
 library(mice)
 # check pattern of missing values in data
-md.pattern(imputeData)
+# md.pattern(imputeData)
 
 library(VIM)
 # view plot of data pattern for missing values
 #shows 7 variables with any missing data in affected data
-aggr_plot <- aggr(imputeData, col=c('navyblue','red'), numbers=TRUE, sortVars=TRUE,
-                  labels=names(imputeData), cex.axis=.7, gap=3,
-                  ylab=c("Histogram of missing data","Pattern"))
+# aggr_plot <- aggr(imputeData, col=c('navyblue','red'), numbers=TRUE, sortVars=TRUE,
+#                   labels=names(imputeData), cex.axis=.7, gap=3,
+#                   ylab=c("Histogram of missing data","Pattern"))
 
 # impute data to fill missing values using 'cart' method to account for categorical variables
 # lso, attempted using 'rf' (random forest) method Note: default method 'pmm' does not work 
@@ -161,12 +161,12 @@ densityplot(rfImpute)
 
 # stripplot(tempData, pch = 20, cex = 1.2)
 # stripplot(rfData, pch = 20, cex = 1.2)
-stripplot(rfImpute, pch = 20, cex = 1.2)
+# stripplot(rfImpute, pch = 20, cex = 1.2)
 
 # completedData <- complete(tempData, 1)
 # completedDataRF <- complete(rfData, 3)
 #pull one of the datasets from the generated imputations
-completeDatarf <- complete(rfImpute, 3)
+completeDatarf <- mice::complete(rfImpute, 3)
 
 # add back 6 vars we didn't use to impute
 #get them back from where we started
@@ -185,160 +185,144 @@ fullData <- select(filter(newdata, Affected == 0), c(1:65)) %>%
   dplyr::union(., newAffected) %>%
   arrange(., birth_year, new_index)
 
+# add affecteds back into group 2
+modelData <- dplyr::union(group2, newAffected) %>%
+  arrange(., birth_year, new_index)
+# fix warning by changing from character back to factor
+
+modelData$Affected <- as.factor(modelData$Affected)
+
 #******************
 #***GOOD TO HERE***
 #******************
 
-#***Begin Modeling on group 2***
+# Splitting the data into training set and test set
+library(caTools)
+set.seed(123)
+split = sample.split(modelData$Affected, SplitRatio = 0.75)
+training_set = subset(modelData, split == TRUE)
+test_set = subset(modelData, split == FALSE)
+
+# Feature scaling (since things like birth_year and new_index vary 
+# greatly from other continuous variables) ???????? 
+training_set[,c(1,3,5:65)] = scale(training_set[,c(1,3,5:65)])
+test_set[,c(1,3,5:65)] = scale(test_set[,c(1,3,5:65)])
+
+#Fitting Logistic Regression to the Training Set
+# classifier = glm(formula = Affected ~ .,
+#                  family = "binomial",
+#                  data = training_set,
+#                  maxit = 50)
+
+# library(logistf)
+# classifier = logistf(Affected ~ ., data = training_set)
+
+
+# library(brglm)
+# classifier.brglm = brglm(Affected ~ + ., family = binomial(logit),
+#                          data = training_set,
+#                          method = "brglm.fit",
+#                          control.brglm=brglm.control(br.maxit=1000))
+# 
+# summary(classifier.brglm)
+
+library(arm)
+classifier.bayesglm = bayesglm(Affected ~ ., family = binomial(link="logit"),
+                               data = training_set)
+
+summary(classifier.bayesglm)
+
+# Predicting test set results 
+prob_pred = predict(classifier.bayesglm, type = 'response', newdata = test_set[-4])
+y_pred = ifelse(prob_pred > 0.5, 1, 0)
+
+# Making the Confusion Matrix
+# pretty poor classifier but we'll try better later
+cm = table(test_set[,4], y_pred)
+
+
+
+
+
+
+
+
+
+
+
+
+#****BELOW HERE IS DATA CAMP LOGISTIC REGRESION****
+
+# library(rsample)
+# set.seed(42)
+# 
+# #prepare the intial split object
+# data_split <- initial_split(modelData, prop=0.75)
+# # Extract the training dataframe 
+# training_data <- training(data_split)
+# # Extract the testing data frame
+# testing_data <- testing(data_split)
+# 
+# set.seed(42)
+# cv_split <- vfold_cv(training_data, v =5)
+# 
 # library(tidyverse)
-# #this creates a tibble for each person in order to model individually
-# data_nested <- group2 %>% 
-#   group_by(new_index) %>%
-#   nest()
+# cv_data <- cv_split %>%
+#   mutate(
+#     train = map(splits, ~training(.x)),
+#     validate = map(splits, ~testing(.x))
+#   )
 # 
-# data_unnested <- data_nested %>%
-#   unnest()
+# # Build a model using the train data for each fold 
+# # of the cross validation
+# cv_models_lr <- cv_data %>%
+#   mutate(model = map(train, ~glm(formula = Affected~., data = .x, 
+#                                  family = "binomial")))
 # 
-# #make sure no data was modified
-# which(group2 != data_unnested, arr.ind=TRUE)
-
-
-
-#****Look below, cross validation not working because not enough affecteds
-library(rsample)
-set.seed(42)
-
-#prepare the intial split object
-data_split <- initial_split(group2, prop=0.75)
-# Extract the training dataframe 
-training_data <- training(data_split)
-# Extract the testing data frame
-testing_data <- testing(data_split)
-
-set.seed(42)
-cv_split <- vfold_cv(training_data, v =5)
-
-cv_data <- cv_split %>%
-  mutate(
-    train = map(splits, ~training(.x)),
-    validate = map(splits, ~testing(.x))
-  )
-
-# Build a model using the train data for each fold 
-# of the cross validation
-cv_models_lr <- cv_data %>%
-  mutate(model = map(train, ~glm(formula = Affected~., data = .x, 
-                                 family = "binomial", maxit = 100)))
-# Extract the first model and validate 
-model <- cv_models_lr$model[[1]]
-validate <- cv_models_lr$validate[[1]]
-
-# Prepare binary vector of actual Attrition values in validate
-validate_actual <- validate$Affected == "Yes"
-
-# Predict the probabilities for the observations in validate
-validate_prob <- predict(model, validate, type = "response")
-
-# Prepare binary vector of predicted Attrition values for validate
-validate_predicted <- validate_prob > 0.5
-
-library(Metrics)
-
-# Compare the actual & predicted performance visually using a table
-table(validate_actual, validate_predicted)
-
-# Calculate the accuracy
-accuracy(validate_actual, validate_predicted)
-
-# Calculate the precision
-precision(validate_actual, validate_predicted)
-
-# Calculate the recall
-recall(validate_actual, validate_predicted)
-
-#***********************
-#***IGNORE BELOW HERE***
-#***********************
-# time to take sample of 1000 that includes all Affected ("1") ids
-# this approach will be to take a small sample of only the
-# affected ids rows and columns (69), then take separate random subset of
-# 931 from merge that have no affecteds. Lastly, combine the two small sample 
-# datasets to get our working dataset of 1000 observations. 
-
-affected_sample <- merge[merge$Affected == 1, ]
-
-#all non_affected
-non_affected <- merge[merge$Affected != 1, ]
-
-# within 2004-2010 birth year range (only age range we have affected ids for)
-year_range_data <- non_affected[non_affected$birth_year <= 2010,]
-
-# sample from our preferred range
-non_affected_sample <- year_range_data[sample(1:nrow(year_range_data), 931, replace = FALSE),]
-
-# combined both sample datasets
-library(dplyr)
-working_data <- bind_rows(affected_sample, non_affected_sample)
-
-# Fitting Logistic Regression to the Sample set 
-classifier = glm(formula = Affected ~ lab_no:birth_year + .,
-                 family = binomial(),
-                 data = working_data)
-
-# summary of fitted model
-summary = summary(classifier)
-
-# better for working with summary coefficients
-# puts summary output into a table
-# install.packages('broom')
-library(broom)
-td <- tidy(classifier)
-
-# plot of p-values vs. coefficient (colored based on p-values)
-# install.packages('ggplot2')
-library(ggplot2)
-ggplot(td, aes(term, p.value, fill = (p.value < 0.05))) + geom_histogram(stat = "identity") + theme(axis.text.x = element_text(angle = 90, hjust = 1)) 
-
-# run a 10-fold cross validation on working_data
-#install.packages("caret")
-#install.packages("klaR")
-library(caret)
-#library(klaR)
-
-#took our lab_num, gender, and birth_year in case it was affected predctions
-# because of continual errors 
-num_dat <- working_data[,c(4:78)]
-#working_data <- as.numeric(working_data$gender)
-
-#figure out errors
-
-Train <- createDataPartition(num_dat$Affected, p=0.6, list=FALSE)
-training <- num_dat[ Train, ]
-testing <- num_dat[ -Train, ]
-
-mod_fit <- train(Affected ~ .,  data=training, method="glm", family="binomial")
-
-predict(mod_fit, newdata=testing)
-predict(mod_fit, newdata=testing, type="prob")
-
-ctrl <- trainControl(method = "repeatedcv", number = 10, savePredictions = TRUE)
-
-mod_fit1 <- train(Affected ~ .,  data=working_data, method="glm", family="binomial",
-                  trControl = ctrl, tuneLength = 5)
-
-pred = predict(mod_fit1, newdata=testing)
-confusionMatrix(data=pred, testing$Class)
-
-#### Time to go into sets based on gender ##### 
-#Note: working_data already has our males + females
-# boxplot(Affected ~ gender, data = working_data)
+# # Extract the first model and validate 
+# model <- cv_models_lr$model[[1]]
+# validate <- cv_models_lr$validate[[1]]
 # 
-# males <- working_data[working_data$gender == "M",]
+# # Prepare binary vector of actual Attrition values in validate
+# validate_actual <- validate$Affected == "Yes"
 # 
-# females <- working_data[working_data$gender == "F",]
+# # Predict the probabilities for the observations in validate
+# validate_prob <- predict(model, validate, type = "response")
+# 
+# # Prepare binary vector of predicted Attrition values for validate
+# validate_predicted <- validate_prob > 0.5
+# 
+# library(Metrics)
+# 
+# # Compare the actual & predicted performance visually using a table
+# table(validate_actual, validate_predicted)
+# 
+# # Calculate the accuracy
+# accuracy(validate_actual, validate_predicted)
+# 
+# # Calculate the precision
+# precision(validate_actual, validate_predicted)
+# 
+# # Calculate the recall
+# recall(validate_actual, validate_predicted)
+# 
+# cv_prep_lr <- cv_models_lr %>% 
+#   mutate(
+#     # Prepare binary vector of actual Attrition values in validate
+#     validate_actual = map(validate, ~.x$Affected == "Yes"),
+#     # Prepare binary vector of predicted Attrition values for validate
+#     validate_predicted = map2(.x = model, .y = validate, ~predict(.x, .y, type = "response") > 0.5)
+#   )
+# 
+# # Calculate the validate recall for each cross validation fold
+# cv_perf_recall <- cv_prep_lr %>% 
+#   mutate(validate_recall = map2_dbl(validate_actual, validate_predicted, 
+#                                     ~recall(actual = .x, predicted = .y)))
+# 
+# # Print the validate_recall column
+# cv_perf_recall$validate_recall
+# 
+# # Calculate the average of the validate_recall column
+# mean(cv_perf_recall$validate_recall)
 
 
-
-
-#create boxplots based on gender
-g <- ggplot(td, aes(genderF, p.value)) + geom_boxplot()
