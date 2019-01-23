@@ -11,8 +11,6 @@ affectedData <- select(filter(data, Affected == 1), c(1:65))
 #ratioAffected <- sum(affectedData$gender == "F")/sum(affectedData$gender == "M")
 #ratioAffected = 0.4081633
 
-#ratioMale <- sum(affectedData$gender =="M")/ nrow(affectedData)
-
 #use for getting control groups (will remove missing data below)
 nonAffectedData <- select(filter(data, Affected == 0), c(1:65))
 
@@ -29,22 +27,30 @@ nonAffectedData$gender[nonAffectedData$gender==""] <- NA
 # based on all NA ids
 # sort by birth_year then lab_no
 
-# newdata <- nonAffectedData[rowSums(is.na(nonAffectedData)) == 0,]
-#
-# justMale <- select(filter(newdata, gender == "M"), c(1:65))
-selectFemale <- newdata[ sample( which(newdata$gender=='F'), round(0.42*length(which(newdata$gender=='F')))), ]
-#
-# ratioNA <- nrow(selectFemale)/nrow(justMale)
-# #ratioNA = 0.4006221
-#
-# fixedData <- dplyr::union(justMale, selectFemale) %>%
-#           arrange(., birth_year, new_index)
-#
-# finalRatio<- sum(fixedData$gender =="F")/sum(fixedData$gender =="M")
+#gets rid of NAs 
+genderCheck <- nonAffectedData[rowSums(is.na(nonAffectedData)) == 0,] 
 
-newdata <- nonAffectedData[rowSums(is.na(nonAffectedData)) == 0,] %>%
-           dplyr::union(., affectedData) %>%
-           arrange(., birth_year, new_index)
+#check the number of males and females in the unaffected data so we can adjust ratio
+sum(genderCheck$gender == "M") # = 220230
+sum(genderCheck$gender == "F") # = 210070
+
+#take a just male dataset that can remain unchanged since affecteds are male dominent
+justmale <- select(filter(genderCheck, gender == "M"), c(1:65))
+#adjust the number of female observations to more accurately depict the ratio of F:M from affecteds
+fixFemale <- genderCheck[sample( which(genderCheck$gender=='F'), round(0.427905*length(which(genderCheck$gender=='F')))), ]
+
+newratio <- sum(fixFemale$gender == "F")/sum(justmale$gender == "M")
+#new ratio = 0.40816419
+
+joingender <- dplyr::union(justMale, fixFemale)
+
+newdata <- dplyr::union(joingender, affectedData) %>%
+            arrange(., birth_year, new_index)
+
+
+# newdata <- nonAffectedData[rowSums(is.na(nonAffectedData)) == 0,] %>%
+#            dplyr::union(., affectedData) %>%
+#            arrange(., birth_year, new_index)
 
 # changing of variable types
 newdata[,c(5:65)]<- sapply(newdata[,5:65],as.numeric)
@@ -53,38 +59,13 @@ newdata$gender = as.factor(newdata$gender)
 
 newdata$Affected = as.factor(newdata$Affected)
 
+finalRatio <- sum(newdata$gender == "F")/sum(newdata$gender == "M")
+#finalRatio = 0.40816419
+
 #Pull two 50 observation control groups based on distance from each affected id (+-200)
 #and store into a list
 
-#REVIEW HERE
-ks1 = 0
-ks1$p.value = 0
-while(ks1$p.value < 0.2) {
-  #print("here")
-  temp1 = vector()
-  for (i in affectedData$new_index) {
-    #print(i)
-    # y here is the row number of affected ids in the full dataset
-    y1 = which(newdata$new_index == i) 
-    #print(y1)
-    #temp1 = append(temp1, newdata[sample((y1-250):(y1+250) , 50, replace = FALSE), "new_index"])
-    temp1 = append(temp1, newdata[base::sample((y1-250):(y1+250), 50, replace = FALSE, 
-        prob = ((ifelse(newdata[(y1-250):(y1+250),'gender'] == "M", .66, .33))/sum(ifelse(newdata[(y1-250):(y1+250),'gender'] == "M", .66, .33)))), "new_index"])
-  }
-  temp1 <- sort(temp1)
-  control1 <- as.data.frame(temp1)
-  #make sure there are no duplicate control values
-  control1 <- unique(control1)
-  #make sure there are no affected ids within the control group
-  non_overlap1 <- dplyr::anti_join(control1, affectedData, by = c("temp1" = "new_index"))
-  
-  #K-S test
-  ks1 <- ks.test(non_overlap1, affectedData$new_index)
-  #want p-value < 0.2 to reject null hypothesis that distributions are not significantally different
-  print(ks1)
-}
-
-
+#****Running into issue where we cannot break while loop
 
 #while loop to make sure we pass K-S Test (testing for distribution distance between actual and control)
 #want to check that the distance between control distribution is significantly different than the actual distribution
@@ -92,6 +73,7 @@ while(ks1$p.value < 0.2) {
 #Control group 1
 ks1 = 0
 ks1$p.value = 0
+#need to clarify this p-value
 while(ks1$p.value < 0.2) {
   #print("here")
   temp1 = vector()
@@ -99,8 +81,10 @@ while(ks1$p.value < 0.2) {
     #print(i)
     # y here is the row number of affected ids in the full dataset
     y1 = which(newdata$new_index == i) 
-    #print(y1)
-    temp1 = append(temp1, newdata[sample((y1-250):(y1+250), 50, replace = FALSE), "new_index"])
+    #print(y1)\
+    #have to change due to new parameters
+    #temp1 = append(temp1, newdata[sample((y1-250):(y1+250), 50, replace = FALSE), "new_index"])
+    temp1 = append(temp1, newdata[sample((y1-150):(y1+350), 50, replace = FALSE), "new_index"])
   }
   temp1 <- sort(temp1)
   control1 <- as.data.frame(temp1)
