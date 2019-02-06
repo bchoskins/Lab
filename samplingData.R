@@ -8,7 +8,7 @@ library(dplyr)
 affectedData <- select(filter(data, Affected == 1), c(1:65))
 
 #ratio for females to males in affected data
-#ratioAffected <- sum(affectedData$gender == "F")/sum(affectedData$gender == "M")
+ratioAffected <- sum(affectedData$gender == "F")/sum(affectedData$gender == "M")
 #ratioAffected = 0.4081633
 
 #use for getting control groups (will remove missing data below)
@@ -17,9 +17,11 @@ nonAffectedData <- select(filter(data, Affected == 0), c(1:65))
 library(plyr)
 # gets rid of two unneeded categories for gender and allows to remove all nonAffected
 # data missing values below 
-nonAffectedData$gender <- revalue(nonAffectedData$gender, c("U"= NA))
-nonAffectedData$gender[nonAffectedData$gender==""] <- NA
+nonAffectedData <- select(filter(nonAffectedData, gender != "U"), c(1:65))
+nonAffectedData <- select(filter(nonAffectedData, gender != ""), c(1:65))
 
+# nonAffectedData$gender <- revalue(nonAffectedData$gender, c("U"= NA))
+# nonAffectedData$gender[nonAffectedData$gender==""] <- NA
 
 # remove rows with missing values so we do not have to impute such a large dataset of controls
 # add back in the affected data since it includes NAs so we can pull control groups
@@ -52,9 +54,14 @@ nonAffectedData$gender[nonAffectedData$gender==""] <- NA
 # # sum(affectedData$gender == "F")/sum(affectedData$gender == "M")
 # # 0.4081633
 
-newdata <- nonAffectedData[rowSums(is.na(nonAffectedData)) == 0,] %>%
-           dplyr::union(., affectedData) %>%
-           arrange(., birth_year, new_index)
+# which(is.na(nonAffectedData$gender))
+
+# newdata <- nonAffectedData[rowSums(is.na(nonAffectedData)) == 0,] %>%
+#            dplyr::union(., affectedData) %>%
+#            arrange(., birth_year, new_index)
+
+newdata <- dplyr::union(nonAffectedData, affectedData) %>%
+  arrange(., birth_year, new_index)
 
 # changing of variable types
 newdata[,c(5:65)]<- sapply(newdata[,5:65],as.numeric)
@@ -97,9 +104,14 @@ while(ks1$p.value < 0.2) {
 
 # this attaches all data because above just gets ids for sample 
 group1 <- select(filter(newdata, new_index %in% non_overlap1$temp), c(1:65))
-fixRatio <- group1[sample( which(group1$gender=='F'), round(0.4251*length(which(group1$gender=='F')))), ]
+#may need to run imputation on control group??? or just save for later
+
+fixRatio <- group1[sample( which(group1$gender=='F'), round(0.4252*length(which(group1$gender=='F')))), ]
 justmale <- select(filter(group1, gender == "M"), c(1:65))
 group1 <- dplyr::union(justmale, fixRatio)
+
+#check ratio
+sum(group1$gender == "F") / sum(group1$gender == "M")
 
 #repeate above for second control group used for modeling
 #Control Group 2
@@ -130,13 +142,20 @@ while(ks2$p.value < 0.2) {
 
 # this attaches all data because above just gets ids for sample 
 group2 <- select(filter(newdata, new_index %in% non_overlap2$temp), c(1:65))
-fixRatio2<- group2[sample( which(group2$gender=='F'), round(0.4251*length(which(group2$gender=='F')))), ]
+
+fixRatio2<- group2[sample( which(group2$gender=='F'), round(0.435*length(which(group2$gender=='F')))), ]
 justmale2 <- select(filter(group2, gender == "M"), c(1:65))
 group2 <- dplyr::union(justmale2, fixRatio2)
+
+#check ratio
+sum(group2$gender == 'F')/ sum(group2$gender == 'M')
 
 # make sure to have two entirely different control groups
 library(dplyr)
 group2 <- anti_join(group1, group2, by = "new_index")
+
+###GOOD???####
+
 
 # use group1 to impute Affected NAs then pull affecteds back out
 # need to first get both datasets to have matching types
@@ -187,7 +206,8 @@ library(VIM)
 # 10  1  2      C0.C18 cart C14.OH, C16.OH, C16.OH.C16, C18.OH, C18.1.OH, C5.1
 
 # trial to remove 6 variables imputation doesn't like 
-trialData <- subset(imputeData, select = -c(18, 23, 24, 28, 30, 47))
+# trialData <- subset(imputeData, select = -c(18, 23, 24, 28, 30, 47))
+trialData <- subset(imputeData, select = -c(18,24,28,30,42,47))
 
 # tempData <- mice(trialData,m=5,maxit=5,meth='cart',seed=500)
 # rfData <- mice(trialData,m=5,maxit=5,meth='rf',seed=500)
@@ -195,6 +215,7 @@ trialData <- subset(imputeData, select = -c(18, 23, 24, 28, 30, 47))
 # https://stefvanbuuren.name/mice/reference/mice.impute.rf.html
 #random forest imputation of missing data
 rfImpute <- mice(trialData, meth = 'rf', ntree = 10)
+# rfImpute <- mice(trialData, meth = 'rf', ntree = 10)
 # no logged events after removing vars
 
 # densityplot(tempData)
@@ -212,38 +233,59 @@ completeDatarf <- mice::complete(rfImpute, 3)
 
 # add back 6 vars we didn't use to impute
 #get them back from where we started
-pBack <- subset(imputeData, select = c(18, 23, 24, 28, 30, 47))
-#attach and reorder
-full <- cbind(completeDatarf, pBack) %>%
-  .[, c(1:17, 60, 18:21, 61, 62, 22:24, 63, 25, 64, 26:41, 65, 42:59)]
-
-library(arsenal)
-#check that the variables are in correct order
-summary(compare(imputeData, full))
+# pBack <- subset(imputeData, select = c(18,24,28,30,42,47))
+# 
+# ####NEED TO FIX THIS REORDER#####
+# 
+# #attach and reorder
+# full <- cbind(completeDatarf, pBack) %>%
+#   .[, c(1:17, 60, 18:21, 61, 62, 22:24, 63, 25, 64, 26:41, 65, 42:59)]
+# 
+# library(arsenal)
+# #check that the variables are in correct order
+# summary(compare(imputeData, full))
 
 # pull out affected data to have a full data set based on imputed data
 # put this full data back into entire dataset from earlier (Also, will
 # be used for modeling with control group 2)
-newAffected <- select(filter(full, Affected == 1), c(1:65))
-fullData <- select(filter(newdata, Affected == 0), c(1:65)) %>%
-  dplyr::union(., newAffected) %>%
-  arrange(., birth_year, new_index)
+newAffected <- select(filter(completeDatarf, Affected == 1), c(1:59))
+# fullData <- select(filter(newdata, Affected == 0), c(1:65)) %>%
+#   dplyr::union(., newAffected) %>%
+#   arrange(., birth_year, new_index)
 
-pract <- group2[sample()]
+group2 <- subset(group2, select = -c(18,24,28,30,42,47))
+
+###NEED TO IMPUTE GROUP2####
+library(gtools)
+# need to add affected data with NAs back in to impute w/ group 1
+imputeData2 <- smartbind(group2, newAffected)
+#sort so that affected data is integrated within the control data
+imputeData2 <- arrange(imputeData2, birth_year, new_index)
+
+
+library(mice)
+
+rfImpute2 <- mice(imputeData2, meth = 'rf', ntree = 10)
+
+densityplot(rfImpute2)
+
+modelData<- mice::complete(rfImpute2, 3)
+
 
 # add imputed affecteds back into group 2
-modelData <- dplyr::union(group2, newAffected) %>%
-  arrange(., birth_year, new_index)
-# fix warning by changing from character back to factor
-modelData$Affected <- as.factor(modelData$Affected)
+# modelData <- dplyr::union(group2, newAffected) %>%
+#   arrange(., birth_year, new_index)
 
+# fix warning by changing from character back to factor
+# modelData$Affected <- as.factor(modelData$Affected)
+modelRatio <- sum(modelData$gender == "F") / sum(modelData$gender == "M")
 
 #******************
 #***GOOD TO HERE***
 #******************
 
-ratio <- sum(newAffected$gender == "F" ) / sum(newAffected$gender == "M")
-ratioControl <- sum(group2$gender == "F") / sum(group2$gender == "M")
+# ratio <- sum(newAffected$gender == "F" ) / sum(newAffected$gender == "M")
+# ratioControl <- sum(group2$gender == "F") / sum(group2$gender == "M")
 
 # Splitting the data into training set and test set
 library(caTools)
@@ -254,8 +296,8 @@ test_set = subset(modelData, split == FALSE)
 
 #***Feature scaling (since things like birth_year and new_index vary 
 # greatly from other continuous variables)*** ???????? 
-training_set[,c(1,3,5:65)] = scale(training_set[,c(1,3,5:65)])
-test_set[,c(1,3,5:65)] = scale(test_set[,c(1,3,5:65)])
+# training_set[,c(1,3,5:65)] = scale(training_set[,c(1,3,5:65)])
+# test_set[,c(1,3,5:65)] = scale(test_set[,c(1,3,5:65)])
 
 #Fitting Logistic Regression to the Training Set
 classifier = glm(formula = Affected ~ .,
