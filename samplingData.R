@@ -138,6 +138,7 @@ group2 <- select(filter(fixedData, new_index %in% non_overlap2$temp), c(1:65))
 # #check ratio
 # sum(group2$gender == 'F')/ sum(group2$gender == 'M')
 
+
 # make sure to have two entirely different control groups
 library(dplyr)
 group2 <- anti_join(group1, group2, by = "new_index")
@@ -195,8 +196,8 @@ library(VIM)
 # 9   1  2      C0.C16 cart C14.OH, C16.OH, C16.OH.C16, C18.OH, C18.1.OH, C5.1
 # 10  1  2      C0.C18 cart C14.OH, C16.OH, C16.OH.C16, C18.OH, C18.1.OH, C5.1
 
-# trial to remove 6 variables imputation doesn't like (C14.OH, C16.OH.C16, C18.OH, C18.1.OH, C5.1)
-trialData <- subset(imputeData, select = -c(18,24,28,30,47))
+# trial to remove 6 variables imputation doesn't like (C14.OH, C16.OH.C16, C18.OH, C18.1.OH, C5.DC.C16, C5.1)
+trialData <- subset(imputeData, select = -c(18,24,28,30,42,47))
 
 # tempData <- mice(trialData,m=5,maxit=5,meth='cart',seed=500)
 # rfData <- mice(trialData,m=5,maxit=5,meth='rf',seed=500)
@@ -238,12 +239,12 @@ completeDatarf <- mice::complete(rfImpute, 3)
 # put this full data back into entire dataset from earlier (Also, will
 # be used for modeling with control group 2)
 
-newAffected <- select(filter(completeDatarf, Affected == 1), c(1:60))
+newAffected <- select(filter(completeDatarf, Affected == 1), c(1:59))
 # fullData <- select(filter(newdata, Affected == 0), c(1:65)) %>%
 #   dplyr::union(., newAffected) %>%
 #   arrange(., birth_year, new_index)
 
-group2 <- subset(group2, select = -c(18,24,28,30,47))
+group2 <- subset(group2, select = -c(18,24,28,30,42,47))
 
 ###NEED TO IMPUTE GROUP2####
 library(gtools)
