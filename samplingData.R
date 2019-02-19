@@ -63,7 +63,7 @@ fixedData$Affected = as.factor(fixedData$Affected)
 #Pull two 50 observation control groups based on distance from each affected id
 #and store into a list
 
-#while loop to make sure we pass K-S Test 
+#while loop to make sure we pass K-S Test of ***Making sure 'the two samples were drawn from the same distribution"***
 # this control group is used for imputing missing affected data
 #Control group 1
 ks1 = 0
@@ -85,24 +85,16 @@ while(ks1$p.value < 0.2) {
   
   #K-S test
   ks1 <- ks.test(non_overlap1, affectedData$new_index)
-  #want p-value > 0.2 to fail to reject null hypothesis that the data are normally distrubuted based on distribution of 
+  #want p-value > 0.2 to fail to reject null hypothesis that the data are following a similar distribution as the
   # affected data throughout
   print(ks1)
 }
 
 # this attaches all data because above just gets ids for sample 
 group1 <- select(filter(fixedData, new_index %in% non_overlap1$temp), c(1:65))
-#may need to run imputation on control group??? or just save for later
 
-# #this is adjusting the gender ratio to ensure there is no bias between controls and actual affected ratios
-# fixRatio <- group1[sample( which(group1$gender=='F'), round(0.4252*length(which(group1$gender=='F')))), ]
-# justmale <- select(filter(group1, gender == "M"), c(1:65))
-# group1 <- dplyr::union(justmale, fixRatio)
-# 
-# #check ratio
-# sum(group1$gender == "F") / sum(group1$gender == "M")
 
-#repeate above for second control group used for modeling
+#repeat above for second control group used for modeling
 #Control Group 2
 ks2 = 0
 ks2$p.value = 0
@@ -130,25 +122,16 @@ while(ks2$p.value < 0.2) {
 # this attaches all data because above just gets ids for sample 
 group2 <- select(filter(fixedData, new_index %in% non_overlap2$temp), c(1:65))
 
-# #this is adjusting the gender ratio to ensure there is no bias between controls and actual affected ratios
-# fixRatio2<- group2[sample( which(group2$gender=='F'), round(0.435*length(which(group2$gender=='F')))), ]
-# justmale2 <- select(filter(group2, gender == "M"), c(1:65))
-# group2 <- dplyr::union(justmale2, fixRatio2)
-# 
-# #check ratio
-# sum(group2$gender == 'F')/ sum(group2$gender == 'M')
-
-
 # make sure to have two entirely different control groups
 library(dplyr)
 group2 <- anti_join(group1, group2, by = "new_index")
 
 
 
-###GOOD???####
+###GOOD FOR SAMPLING CONTROL GROUPS####
 
 
-# use group1 to impute Affected and group 1 NAs then pull affecteds back out
+# use group1 to impute Affected and group 1 NAs
 # need to first get both datasets to have matching types
 affectedData[,c(5:65)]<- sapply(affectedData[,5:65],as.numeric)
 
@@ -196,15 +179,20 @@ library(VIM)
 # 9   1  2      C0.C16 cart C14.OH, C16.OH, C16.OH.C16, C18.OH, C18.1.OH, C5.1
 # 10  1  2      C0.C18 cart C14.OH, C16.OH, C16.OH.C16, C18.OH, C18.1.OH, C5.1
 
-# trial to remove 6 variables imputation doesn't like (C14.OH, C16.OH.C16, C18.OH, C18.1.OH, C5.DC.C16, C5.1)
-trialData <- subset(imputeData, select = -c(18,24,28,30,42,47))
+ 
+####GOOD HERE BUT WANT TO TRY FEATURE SELECTION WITH CARET ABOVE#####
+####JK needs to be done after imputation because we cannot have NAS doing it####
+ 
+ 
+#remove 6 variables imputation doesn't like (C14.OH, C16.OH.C16, C18.OH, C18.1.OH, C5.DC.C16, C5.1)
+adjustedData <- subset(imputeData, select = -c(18,24,28,30,42,47))
 
 # tempData <- mice(trialData,m=5,maxit=5,meth='cart',seed=500)
 # rfData <- mice(trialData,m=5,maxit=5,meth='rf',seed=500)
 
 # https://stefvanbuuren.name/mice/reference/mice.impute.rf.html
 #random forest imputation of missing data
-rfImpute <- mice(trialData, meth = 'rf', ntree = 10)
+rfImpute <- mice(adjustedData, meth = 'rf', ntree = 10)
 # no logged events after removing vars
 
 # densityplot(tempData)
@@ -221,42 +209,26 @@ densityplot(rfImpute)
 #now contains control group 1 and affected data
 completeDatarf <- mice::complete(rfImpute, 3)
 
-# add back 6 vars we didn't use to impute
-#get them back from where we started
-# pBack <- subset(imputeData, select = c(18,24,28,30,42,47))
-# 
-# ####NEED TO FIX THIS REORDER#####
-# 
-# #attach and reorder
-# full <- cbind(completeDatarf, pBack) %>%
-#   .[, c(1:17, 60, 18:21, 61, 62, 22:24, 63, 25, 64, 26:41, 65, 42:59)]
-# 
-# library(arsenal)
-# #check that the variables are in correct order
-# summary(compare(imputeData, full))
 
-# pull out affected data to have a full data set based on imputed data
-# put this full data back into entire dataset from earlier (Also, will
-# be used for modeling with control group 2)
+###SHould I pull out the new affecteds from group 1 to use on group 2??####
 
-newAffected <- select(filter(completeDatarf, Affected == 1), c(1:59))
+# newAffected <- select(filter(completeDatarf, Affected == 1), c(1:59))
 # fullData <- select(filter(newdata, Affected == 0), c(1:65)) %>%
 #   dplyr::union(., newAffected) %>%
 #   arrange(., birth_year, new_index)
 
-group2 <- subset(group2, select = -c(18,24,28,30,42,47))
-
-###NEED TO IMPUTE GROUP2####
 library(gtools)
-# need to add affected data with NAs back in to impute w/ group 1
-imputeData2 <- smartbind(group2, newAffected)
+# need to add affected data with NAs back in to impute w/ group 2
+imputeData2 <- smartbind(group2, affectedData)
 #sort so that affected data is integrated within the control data
 imputeData2 <- arrange(imputeData2, birth_year, new_index)
 
+# take out same disliked varaibles as with group1
+adjustedData2 <- subset(imputeData2, select = -c(18,24,28,30,42,47))
 
 library(mice)
 
-rfImpute2 <- mice(imputeData2, meth = 'rf', ntree = 10)
+rfImpute2 <- mice(adjustedData2, meth = 'rf', ntree = 10)
 
 densityplot(rfImpute2)
 
@@ -270,12 +242,80 @@ modelRatio <- sum(modelData$gender == "F") / sum(modelData$gender == "M")
 #******************
 
 
+
 # Splitting the data into training set and test set
-library(caTools)
-set.seed(123)
-split = sample.split(modelData$Affected, SplitRatio = 0.75)
-training_set = subset(modelData, split == TRUE)
-test_set = subset(modelData, split == FALSE)
+# library(caTools)
+# set.seed(123)
+# split = sample.split(modelData$Affected, SplitRatio = 0.75)
+# training_set = subset(modelData, split == TRUE)
+# test_set = subset(modelData, split == FALSE)
+
+###TRYING OUT SOME CARET METHODS#####
+library(caret)
+
+#Converting every categorical variable to numerical using dummy variables
+dmy <- dummyVars(" ~ .", data = modelData,fullRank = T)
+model_transformed <- data.frame(predict(dmy, newdata = modelData))
+#Male = 1, female = 0 | affected = 1, unaffected = 0
+
+
+#Converting the dependent variable back to categorical
+model_transformed$Affected.1<-as.factor(model_transformed$Affected.1)
+
+
+#Spliting training set into two parts based on outcome: 75% and 25%
+index <- createDataPartition(model_transformed$Affected.1, p=0.75, list=FALSE)
+trainSet <- model_transformed[ index,]
+testSet <- model_transformed[-index,]
+
+
+#Feature selection using rfe in caret
+controlled <- rfeControl(functions = rfFuncs,
+                      method = "repeatedcv",
+                      repeats = 3,
+                      verbose = FALSE)
+outcomeName<-'Affected.1'
+predictors<-names(trainSet)[!names(trainSet) %in% outcomeName]
+Loan_Pred_Profile <- rfe(trainSet[,predictors], trainSet[,outcomeName],
+                         rfeControl = controlled)
+Loan_Pred_Profile
+# top predictors were strange in that some were imputed and thus not reliable, 
+# Recursive feature selection
+# 
+# Outer resampling method: Cross-Validated (10 fold, repeated 3 times) 
+# 
+# Resampling performance over subset size:
+#   
+#   Variables Accuracy      Kappa AccuracySD KappaSD Selected
+# 4   0.9744 -0.0005464   0.002156 0.00208         
+# 8   0.9747  0.0000000   0.001929 0.00000        *
+#   16   0.9747  0.0000000   0.001929 0.00000         
+# 58   0.9747  0.0000000   0.001929 0.00000         
+# 
+# The top 5 variables (out of 8):
+#   C0.C18, Phe, C5, C0.C16, C16.OH
+
+#Modelign w/ Caret
+
+model_gbm<-train(trainSet[,predictors],trainSet[,outcomeName],method='gbm')
+
+#Predictions
+# predictions<-predict.train(object=model_gbm,testSet[,predictors],type="raw")
+# table(predictions)
+# 
+# confusionMatrix(predictions,testSet[,outcomeName])
+
+model_rf<-train(trainSet[,predictors],trainSet[,outcomeName],method='rf')
+
+#Predictions
+# predictions<-predict.train(object=model_rf,testSet[,predictors],type="raw")
+# table(predictions)
+# 
+# confusionMatrix(predictions,testSet[,outcomeName])
+
+model_nnet<-train(trainSet[,predictors],trainSet[,outcomeName],method='nnet')
+
+model_glm<-train(trainSet[,predictors],trainSet[,outcomeName],method='glm')
 
 #***Feature scaling (since things like birth_year and new_index vary 
 # greatly from other continuous variables)*** ???????? 
