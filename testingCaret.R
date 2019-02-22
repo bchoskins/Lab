@@ -156,6 +156,7 @@ trainData <- arrange(trainData, birth_year, new_index)
 
 sum(is.na(trainData))
 
+library(caret)
 #Imputing missing values using KNN.Also centering and scaling numerical columns
 preProcValues <- preProcess(trainData, method = c("knnImpute","center","scale"))
 
@@ -174,22 +175,35 @@ train_transformed <- data.frame(predict(dmy, newdata = train_processed))
 #Converting the dependent variable back to categorical
 train_transformed$Affected <-as.factor(train_transformed$Affected)
 
-outcomeName<-'Affected'
-predictors<-names(train_transformed)[!names(train_transformed) %in% outcomeName]
 
-library(randomForest)
-model1 <- randomForest(Affected~ ., data = train_transformed, importance = TRUE)
-summary(model1)
+#Trying out stratified sampling in model
+model <- randomForest(Affected ~., data=train_transformed, sampsize=c(69,69), strata=train_transformed$Affected)
+summary(model)
+model
+#
 
-
-# Fine tuning parameters of Random Forest model
-model2 <- randomForest(Affected ~ ., data = train_transformed, ntree = 500, mtry = 6, importance = TRUE)
-model2
+# outcomeName<-'Affected'
+# predictors<-names(train_transformed)[!names(train_transformed) %in% outcomeName]
+# 
+# library(randomForest)
+# model1 <- randomForest(Affected~ ., data = train_transformed, importance = TRUE)
+# summary(model1)
+# 
+# 
+# # Fine tuning parameters of Random Forest model
+# model2 <- randomForest(Affected ~ ., data = train_transformed, ntree = 500, mtry = 6, importance = TRUE)
+# model2
+# summary(model2)
 
 # Predicting on train set
-predTrain <- predict(model2, train_transformed, type = "class")
+predTrain <- predict(model, train_transformed, type = "class")
 # Checking classification accuracy
 table(predTrain, train_transformed$Affected)  
+
+
+
+
+
 
 # model_gbm<-train(trainSet[,predictors],trainSet[,outcomeName],method='gbm')
 # 
