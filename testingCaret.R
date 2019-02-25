@@ -180,6 +180,7 @@ train_transformed$Affected <-as.factor(train_transformed$Affected)
 model <- randomForest(Affected ~., data=train_transformed, sampsize=c(69,69), strata=train_transformed$Affected)
 summary(model)
 model
+varImpPlot(model)
 #
 
 # outcomeName<-'Affected'

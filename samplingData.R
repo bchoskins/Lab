@@ -124,9 +124,10 @@ group2 <- select(filter(fixedData, new_index %in% non_overlap2$temp), c(1:65))
 
 # make sure to have two entirely different control groups
 library(dplyr)
-group2 <- anti_join(group1, group2, by = "new_index")
+group2 <- setdiff(group2, group1, by = "new_index")
 
-
+#confirm no overlapping observations
+same <- dplyr::intersect(group1, group2)
 
 ###GOOD FOR SAMPLING CONTROL GROUPS####
 
@@ -242,6 +243,25 @@ modelRatio <- sum(modelData$gender == "F") / sum(modelData$gender == "M")
 #******************
 
 
+#Trying out stratified sampling in model
+model <- randomForest(Affected ~., data=modelData, sampsize=c(69,69), strata=modelData$Affected, ntrees=100)
+summary(model)
+model
+varImpPlot(model)
+
+# # Results
+# Call:
+#   randomForest(formula = Affected ~ ., data = modelData, sampsize = c(69,      69), strata = modelData$Affected, ntrees = 100) 
+# Type of random forest: classification
+# Number of trees: 500
+# No. of variables tried at each split: 7
+# 
+# OOB estimate of  error rate: 10.83%
+# Confusion matrix:
+#   0   1 class.error
+# 0 2440 233  0.08716798
+# 1   64   5  0.92753623
+
 
 # Splitting the data into training set and test set
 # library(caTools)
@@ -250,115 +270,42 @@ modelRatio <- sum(modelData$gender == "F") / sum(modelData$gender == "M")
 # training_set = subset(modelData, split == TRUE)
 # test_set = subset(modelData, split == FALSE)
 
-###TRYING OUT SOME CARET METHODS#####
-library(caret)
-
-#Converting every categorical variable to numerical using dummy variables
-dmy <- dummyVars(" ~ .", data = modelData,fullRank = T)
-model_transformed <- data.frame(predict(dmy, newdata = modelData))
-#Male = 1, female = 0 | affected = 1, unaffected = 0
-
-
-#Converting the dependent variable back to categorical
-model_transformed$Affected.1<-as.factor(model_transformed$Affected.1)
-
-
-#Spliting training set into two parts based on outcome: 75% and 25%
-index <- createDataPartition(model_transformed$Affected.1, p=0.75, list=FALSE)
-trainSet <- model_transformed[ index,]
-testSet <- model_transformed[-index,]
-
-
-#Feature selection using rfe in caret
-controlled <- rfeControl(functions = rfFuncs,
-                      method = "repeatedcv",
-                      repeats = 3,
-                      verbose = FALSE)
-outcomeName<-'Affected.1'
-predictors<-names(trainSet)[!names(trainSet) %in% outcomeName]
-Loan_Pred_Profile <- rfe(trainSet[,predictors], trainSet[,outcomeName],
-                         rfeControl = controlled)
-Loan_Pred_Profile
-# top predictors were strange in that some were imputed and thus not reliable, 
-# Recursive feature selection
+# #Fitting Logistic Regression to the Training Set
+# classifier = glm(formula = Affected ~ .,
+#                  family = "binomial",
+#                  data = modelData,
+#                  maxit = 50)
 # 
-# Outer resampling method: Cross-Validated (10 fold, repeated 3 times) 
+# summary(classifier)
+# plogis(predict(classifier, test_set, type = "response"))
+# predict(classifier, test_set)
 # 
-# Resampling performance over subset size:
-#   
-#   Variables Accuracy      Kappa AccuracySD KappaSD Selected
-# 4   0.9744 -0.0005464   0.002156 0.00208         
-# 8   0.9747  0.0000000   0.001929 0.00000        *
-#   16   0.9747  0.0000000   0.001929 0.00000         
-# 58   0.9747  0.0000000   0.001929 0.00000         
+# # library(logistf)
+# # classifier = logistf(Affected ~ ., data = training_set)
 # 
-# The top 5 variables (out of 8):
-#   C0.C18, Phe, C5, C0.C16, C16.OH
-
-#Modelign w/ Caret
-
-model_gbm<-train(trainSet[,predictors],trainSet[,outcomeName],method='gbm')
-
-#Predictions
-# predictions<-predict.train(object=model_gbm,testSet[,predictors],type="raw")
-# table(predictions)
+# # library(brglm)
+# # classifier.brglm = brglm(Affected ~ + ., family = binomial(logit),
+# #                          data = training_set,
+# #                          method = "brglm.fit",
+# #                          control.brglm=brglm.control(br.maxit=1000))
+# # 
+# # summary(classifier.brglm)
 # 
-# confusionMatrix(predictions,testSet[,outcomeName])
-
-model_rf<-train(trainSet[,predictors],trainSet[,outcomeName],method='rf')
-
-#Predictions
-# predictions<-predict.train(object=model_rf,testSet[,predictors],type="raw")
-# table(predictions)
+# library(arm)
+# classifier.bayesglm = bayesglm(Affected ~ ., family = binomial(link="logit"),
+#                                data = training_set)
 # 
-# confusionMatrix(predictions,testSet[,outcomeName])
-
-model_nnet<-train(trainSet[,predictors],trainSet[,outcomeName],method='nnet')
-
-model_glm<-train(trainSet[,predictors],trainSet[,outcomeName],method='glm')
-
-#***Feature scaling (since things like birth_year and new_index vary 
-# greatly from other continuous variables)*** ???????? 
-# training_set[,c(1,3,5:65)] = scale(training_set[,c(1,3,5:65)])
-# test_set[,c(1,3,5:65)] = scale(test_set[,c(1,3,5:65)])
-
-
-#Fitting Logistic Regression to the Training Set
-classifier = glm(formula = Affected ~ .,
-                 family = "binomial",
-                 data = training_set,
-                 maxit = 50)
-
-summary(classifier)
-plogis(predict(classifier, test_set, type = "response"))
-predict(classifier, test_set)
-
-# library(logistf)
-# classifier = logistf(Affected ~ ., data = training_set)
-
-# library(brglm)
-# classifier.brglm = brglm(Affected ~ + ., family = binomial(logit),
-#                          data = training_set,
-#                          method = "brglm.fit",
-#                          control.brglm=brglm.control(br.maxit=1000))
+# summary(classifier.bayesglm)
 # 
-# summary(classifier.brglm)
-
-library(arm)
-classifier.bayesglm = bayesglm(Affected ~ ., family = binomial(link="logit"),
-                               data = training_set)
-
-summary(classifier.bayesglm)
-
-
-
-# Predicting test set results 
-prob_pred = predict(classifier.bayesglm, type = 'response', newdata = test_set[-4])
-y_pred = ifelse(prob_pred > 0.5, 1, 0)
-
-# Making the Confusion Matrix
-# pretty poor classifier but we'll try better later
-cm = table(test_set[,4], y_pred)
+# 
+# 
+# # Predicting test set results 
+# prob_pred = predict(classifier.bayesglm, type = 'response', newdata = test_set[-4])
+# y_pred = ifelse(prob_pred > 0.5, 1, 0)
+# 
+# # Making the Confusion Matrix
+# # pretty poor classifier but we'll try better later
+# cm = table(test_set[,4], y_pred)
 
 
 
