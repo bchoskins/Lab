@@ -1,6 +1,5 @@
-#testing caret package on previous work starting with imputation of control groups
-
-#Sample data/Imputation of missing affected data/construct models from sampled data
+#Sample data/Imputation of missing affected data/construct models from sampled data (TESTING WITH CARET PACKAGE)
+#NOTE: testing imputation early takes too long, need to impute after sampling
 
 data = read.delim2('goodData.csv', header = TRUE, sep = ",", dec = ",", stringsAsFactor = FALSE)
 data = data[c(-1)]
@@ -29,28 +28,6 @@ newData <- dplyr::union(justmale, fixRatio)
 #check ratio
 sum(newData$gender == "F") / sum(newData$gender == "M")
 # 0.4081158
-
-#check the number of males and females in the unaffected data so we can adjust ratio
-#sum(genderCheck$gender == "M") # = 220230
-#sum(genderCheck$gender == "F") # = 210070
-
-# #take a just male dataset that can remain unchanged since affecteds are male dominent
-# justmale <- select(filter(genderCheck, gender == "M"), c(1:65))
-# #adjust the number of female observations to more accurately depict the ratio of F:M from affecteds
-# fixFemale <- genderCheck[sample( which(genderCheck$gender=='F'), round(0.427905*length(which(genderCheck$gender=='F')))), ]
-# 
-# newratio <- sum(fixFemale$gender == "F")/sum(justmale$gender == "M")
-# #new ratio = 0.40816419
-# 
-# joingender <- dplyr::union(justmale, fixFemale)
-# 
-# newdata <- dplyr::union(joingender, affectedData) 
-# newdata <- arrange(newdata, birth_year, new_index)
-# 
-# # sum(newdata$gender =="F")/sum(newdata$gender == "M")
-# # 0.4081642
-# # sum(affectedData$gender == "F")/sum(affectedData$gender == "M")
-# # 0.4081633
 
 fixedData <- dplyr::union(newData, affectedData) %>%
   arrange(., birth_year, new_index)
@@ -126,9 +103,13 @@ group2 <- select(filter(fixedData, new_index %in% non_overlap2$temp), c(1:65))
 
 # make sure to have two entirely different control groups
 library(dplyr)
-group2 <- anti_join(group1, group2, by = "new_index")
+group2 <- setdiff(group2, group1, by = "new_index")
+
+#confirm no overlapping observations
+same <- dplyr::intersect(group1, group2)
 
 ###GOOD FOR SAMPLING CONTROL GROUPS####
+
 
 # use group1 to impute Affected and group 1 NAs
 # need to first get both datasets to have matching types
@@ -174,14 +155,98 @@ train_transformed <- data.frame(predict(dmy, newdata = train_processed))
 
 #Converting the dependent variable back to categorical
 train_transformed$Affected <-as.factor(train_transformed$Affected)
+str(train_transformed)
 
 
-#Trying out stratified sampling in model
-model <- randomForest(Affected ~., data=train_transformed, sampsize=c(69,69), strata=train_transformed$Affected)
-summary(model)
-model
-varImpPlot(model)
-#
+####Trying out several tuning methods in caret####
+
+library(randomForest)
+library(mlbench)
+library(caret)
+
+x <- train_transformed[,-c(4)]
+y <- train_transformed[,c(4)]
+
+# Create model with default paramters
+# control <- trainControl(method="repeatedcv", number=10, repeats=3)
+# seed <- 7
+# metric <- "Accuracy"
+# set.seed(seed)
+# mtry <- sqrt(ncol(x))
+# tunegrid <- expand.grid(.mtry=mtry)
+# #takes a couple min to run
+# rf_default <- train(Affected~., data=train_transformed, method="rf", metric=metric, tuneGrid=tunegrid, trControl=control)
+# print(rf_default)
+
+
+
+# Random Search
+control <- trainControl(method="repeatedcv", number=10, repeats=3, search="random")
+set.seed(seed)
+mtry <- sqrt(ncol(x))
+# takes too long
+rf_random <- train(Affected~., data=train_transformed, method="rf", metric=metric, tuneLength=15, trControl=control)
+print(rf_random)
+plot(rf_random)
+
+
+# ####Trying out stratified sampling in model####
+# model <- randomForest(Affected ~., data=train_transformed, sampsize=c(69,69), strata=train_transformed$Affected, ntree=2000, mtry=8)
+# summary(model)
+# model
+# varImpPlot(model)
+# 
+# # #results
+# # Type of random forest: classification
+# # Number of trees: 125
+# # No. of variables tried at each split: 8
+# # 
+# # OOB estimate of  error rate: 11.45%
+# # Confusion matrix:
+# #   1   2 class.error
+# # 1 2421 252  0.09427609
+# # 2   62   7  0.89855072
+# 
+# ####Working on tuning parameters####
+# modelLookup(model='rf')
+# 
+# #mtry of 6, 8 are best OOB
+# x <- train_transformed[,-c(4)]
+# y <- train_transformed[,c(4)]
+# 
+# 
+# # Manual Search
+# seed <- 7
+# metric <- "Accuracy"
+# control <- trainControl(method="repeatedcv", number=10, repeats=3, search="grid")
+# tunegrid <- expand.grid(.mtry=c(sqrt(ncol(x))))
+# modellist <- list()
+# for (ntree in c(1000, 1500, 2000, 2500)) {
+#   set.seed(seed)
+#   fit <- train(Affected~., data=train_transformed, method="rf", metric=metric, tuneGrid=tunegrid, trControl=control, ntree=ntree)
+#   key <- toString(ntree)
+#   modellist[[key]] <- fit
+# }
+# # compare results
+# results <- resamples(modellist)
+# summary(results)
+# dotplot(results)
+
+
+
+
+
+# set.seed(7)
+# bestmtry <- tuneRF(x, y, stepFactor=1.5, improve=1e-5, ntree=500)
+# print(bestmtry)
+# tunegrid <- expand.grid(.mtry=8)
+# # mtry <- sqrt(ncol(x))
+# # tunegrid <- expand.grid(.mtry=mtry)
+# model <- randomForest(Affected ~., data=train_transformed, sampsize=c(69,69), strata=train_transformed$Affected, ntree=500, tuneGrid=tunegrid)
+# summary(model)
+# model
+# varImpPlot(model)
+
 
 # outcomeName<-'Affected'
 # predictors<-names(train_transformed)[!names(train_transformed) %in% outcomeName]
@@ -202,15 +267,5 @@ predTrain <- predict(model, train_transformed, type = "class")
 table(predTrain, train_transformed$Affected)  
 
 
-
-
-
-
-# model_gbm<-train(trainSet[,predictors],trainSet[,outcomeName],method='gbm')
-# 
-# model_rf<-train(train_transformed[,predictors],train_transformed[,outcomeName],method='rf')
-# 
-# model_nnet<-train(trainSet[,predictors],trainSet[,outcomeName],method='nnet')
-# model_glm<-train(trainSet[,predictors],trainSet[,outcomeName],method='glm')
 
 

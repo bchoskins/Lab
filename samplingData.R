@@ -1,4 +1,5 @@
 #Sample data/Imputation of missing affected data/construct models from sampled data
+#NOTE: testing imputation early takes too long, need to impute after sampling
 
 data = read.delim2('goodData.csv', header = TRUE, sep = ",", dec = ",", stringsAsFactor = FALSE)
 data = data[c(-1)]
