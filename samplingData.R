@@ -150,7 +150,7 @@ imputeData <- arrange(imputeData, birth_year, new_index)
 
 library(mice)
 # check pattern of missing values in data
- md.pattern(imputeData)
+ # md.pattern(imputeData)
 
 library(VIM)
 # view plot of data pattern for missing values
@@ -186,8 +186,8 @@ library(VIM)
 ####JK needs to be done after imputation because we cannot have NAS doing it####
  
  
-#remove 6 variables imputation doesn't like (C14.OH, C16.OH.C16, C18.OH, C18.1.OH, C5.DC.C16, C5.1)
-adjustedData <- subset(imputeData, select = -c(18,24,28,30,42,47))
+#remove 6 variables imputation doesn't like (C14.OH, C16.OH, C16.OH.C16, C18.OH, C18.1.OH, C5.DC.C16, C5.1)
+adjustedData <- subset(imputeData, select = -c(18,23,24,28,30,42,47))
 
 # tempData <- mice(trialData,m=5,maxit=5,meth='cart',seed=500)
 # rfData <- mice(trialData,m=5,maxit=5,meth='rf',seed=500)
@@ -226,7 +226,7 @@ imputeData2 <- smartbind(group2, affectedData)
 imputeData2 <- arrange(imputeData2, birth_year, new_index)
 
 # take out same disliked varaibles as with group1
-adjustedData2 <- subset(imputeData2, select = -c(18,24,28,30,42,47))
+adjustedData2 <- subset(imputeData2, select = -c(18,23,24,28,30,42,47))
 
 library(mice)
 
@@ -245,23 +245,29 @@ modelRatio <- sum(modelData$gender == "F") / sum(modelData$gender == "M")
 
 
 #Trying out stratified sampling in model
-model <- randomForest(Affected ~., data=modelData, sampsize=c(69,69), strata=modelData$Affected, ntrees=100)
+model <- randomForest(Affected ~., data=modelData, sampsize=c(69,69), strata=modelData$Affected, ntrees=1500, mtry = 8)
 summary(model)
 model
 varImpPlot(model)
 
+#AUC-ROC Curve (higher = better at predicting affected vs. control)
+require(pROC)
+rf.roc<-roc(modelData$Affected, model$votes[,2])
+plot(rf.roc)
+auc(rf.roc)
+
 # # Results
 # Call:
-#   randomForest(formula = Affected ~ ., data = modelData, sampsize = c(69,      69), strata = modelData$Affected, ntrees = 100) 
+#   randomForest(formula = Affected ~ ., data = modelData, sampsize = c(69,      69), strata = modelData$Affected, ntrees = 1500, mtry = 8) 
 # Type of random forest: classification
 # Number of trees: 500
-# No. of variables tried at each split: 7
+# No. of variables tried at each split: 8
 # 
-# OOB estimate of  error rate: 10.83%
+# OOB estimate of  error rate: 10.34%
 # Confusion matrix:
 #   0   1 class.error
-# 0 2440 233  0.08716798
-# 1   64   5  0.92753623
+# 0 2442 217  0.08160963
+# 1   65   4  0.94202899
 
 
 # Splitting the data into training set and test set
