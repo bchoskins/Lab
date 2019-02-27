@@ -1,5 +1,8 @@
 #Sample data/Imputation of missing affected data/construct models from sampled data (TESTING WITH CARET PACKAGE)
 #NOTE: testing imputation early takes too long, need to impute after sampling
+#NOTE: This file specifically is focusing on stratified sampling in caret package prior to model tuning 
+#NOTE: This file goes off of caretSS but adjust the amount of affecteds in the train/validate 
+# data frames because having all in both throws off the AUC-ROC predictions
 
 data = read.delim2('goodData.csv', header = TRUE, sep = ",", dec = ",", stringsAsFactor = FALSE)
 data = data[c(-1)]
@@ -23,6 +26,7 @@ nonAffectedData <- select(filter(data, Affected == 0), c(1:65))
 fixRatio <- df[sample( which(df$gender=='F'), round(0.427273849*length(which(df$gender=='F')))), ]
 
 justmale <- select(filter(df, gender == "M"), c(1:65))
+
 newData <- dplyr::union(justmale, fixRatio)
 
 #check ratio
@@ -119,15 +123,27 @@ affectedData$gender = as.factor(affectedData$gender)
 
 affectedData$Affected = as.factor(affectedData$Affected)
 
+
+# ratioed smapling needs to be done here
+# here we adjust the the affecteds in each, do about 60% in validate and 40% in training so that they do not overlap. 
+require(caTools)
+set.seed(123)   #  set seed to ensure you always have same random numbers generated
+sample = sample.split(affectedData,SplitRatio = 0.60) # splits the data in the ratio mentioned in SplitRatio. After splitting marks these rows as logical TRUE and the the remaining are marked as logical FALSE
+sampleV =subset(affectedData,sample ==TRUE) # creates a training dataset named train1 with rows which are marked as TRUE
+sampleT=subset(affectedData, sample==FALSE)
+
+check <- dplyr::intersect(sampleT, sampleV)
+
+
 library(gtools)
 # need to add affected data with NAs back in to impute w/ group 1
-validateData <- smartbind(group1, affectedData)
+validateData <- smartbind(group1, sampleV)
 #sort so that affected data is integrated within the control data
 validateData <- arrange(validateData, birth_year, new_index)
 
-library(gtools)
+library(gtools) 
 # need to add affected data with NAs back in to impute w/ group 2
-trainData <- smartbind(group2, affectedData)
+trainData <- smartbind(group2, sampleT)
 #sort so that affected data is integrated within the control data
 trainData <- arrange(trainData, birth_year, new_index)
 
@@ -136,168 +152,90 @@ trainData <- arrange(trainData, birth_year, new_index)
 #******************
 
 sum(is.na(trainData))
+sum(is.na(validateData))
 
 library(caret)
 #Imputing missing values using KNN.Also centering and scaling numerical columns
 preProcValues <- preProcess(trainData, method = c("knnImpute","center","scale"))
+preProcValues2 <- preProcess(validateData, method = c("knnImpute","center","scale"))
 
-#densityplot(rfImpute)???
 
 library('RANN')
 train_processed <- predict(preProcValues, trainData)
 sum(is.na(train_processed))
 str(train_processed)
 
+validate_processed <- predict(preProcValues2, validateData)
+sum(is.na(validate_processed))
+str(validate_processed)
+
 #Converting outcome variable to numeric
 train_processed$Affected = as.numeric(train_processed$Affected)
+validate_processed$Affected = as.numeric(validate_processed$Affected)
 
 #Converting every categorical variable to numerical using dummy variables
 dmy <- dummyVars(" ~ .", data = train_processed,fullRank = T)
 train_transformed <- data.frame(predict(dmy, newdata = train_processed))
 
+dmy2 <- dummyVars(" ~ .", data = validate_processed,fullRank = T)
+validate_transformed <- data.frame(predict(dmy2, newdata = validate_processed))
+
 #Converting the dependent variable back to categorical
 train_transformed$Affected <-as.factor(train_transformed$Affected)
 str(train_transformed)
 
-
-####Trying out several tuning methods in caret####
-
-library(randomForest)
-library(mlbench)
-library(caret)
-
-x <- train_transformed[,-c(4)]
-y <- train_transformed[,c(4)]
-seed <- 7
-metric <- "Accuracy"
-# Manual Search
-control <- trainControl(method="repeatedcv", number=10, repeats=1, search="grid")
-tunegrid <- expand.grid(.mtry=c(sqrt(ncol(x))))
-modellist <- list()
-# runs for quite a bit but will finish
-for (ntree in c(1000, 1500, 2000, 2500)) {
-  set.seed(seed)
-  fit <- train(Affected~., data=train_transformed, method="rf", metric=metric, tuneGrid=tunegrid, trControl=control, ntree=ntree)
-  key <- toString(ntree)
-  modellist[[key]] <- fit
-}
-# compare results
-results <- resamples(modellist)
-summary(results)
-dotplot(results)
-
-#also takes a hot sec to run
-bestModel <- train(Affected~., data=train_transformed, method="rf", metric=metric, tuneGrid=tunegrid, trControl=control, ntree=1500)
-
-#AUC-ROC Curve (higher = better at predicting affected vs. control)
-library(pROC)
-# Select a parameter setting
-selectedIndices <- bestModel$pred$mtry == 8
-# Plot:
-plot.roc(bestModel$pred$obs[selectedIndices],
-         bestModel$pred$M[selectedIndices])
+validate_transformed$Affected <-as.factor(validate_transformed$Affected)
+str(validate_transformed)
 
 
+##### Now testing down sampling 
 
-require(pROC)
-rf.roc<-roc(train_transformed$Affected, bestModel$votes[,2])
-plot(rf.roc)
-auc(rf.roc)
+####works well but is way too accurate since having to use validation data as test data but they contain the same amount of affecteds 
 
+table(train_transformed$Affected)
 
-# Create model with default paramters
-# control <- trainControl(method="repeatedcv", number=10, repeats=3)
-# seed <- 7
-# metric <- "Accuracy"
-# set.seed(seed)
-# mtry <- sqrt(ncol(x))
-# tunegrid <- expand.grid(.mtry=mtry)
-# #takes a couple min to run
-# rf_default <- train(Affected~., data=train_transformed, method="rf", metric=metric, tuneGrid=tunegrid, trControl=control)
-# print(rf_default)
+nmin <- sum(train_transformed$Affected == 2)
 
-# # Random Search
-# control <- trainControl(method="repeatedcv", number=10, repeats=3, search="random")
-# set.seed(seed)
-# mtry <- sqrt(ncol(x))
-# # takes too long
-# rf_random <- train(Affected~., data=train_transformed, method="rf", metric=metric, tuneLength=15, trControl=control)
-# print(rf_random)
-# plot(rf_random)
+ctrl <- trainControl(method = "cv",
+                     classProbs = TRUE,
+                     summaryFunction = twoClassSummary)
 
+set.seed(2)
+rfDownsampled <- train(make.names(Affected) ~., data=train_transformed,
+                       method="rf",
+                       ntree=1500,
+                       tuneLength=5,
+                       metric="ROC",
+                       trControl=ctrl,
+                       strata=train_transformed$Affected,
+                       sampsize=rep(nmin,2)) 
+#hey
 
-# ####Trying out stratified sampling in model w/ paramter tuning####
-# model <- randomForest(Affected ~., data=train_transformed, sampsize=c(69,69), strata=train_transformed$Affected, ntree=2000, mtry=8)
-# summary(model)
-# model
-# varImpPlot(model)
-# 
-# # #results
-# # Type of random forest: classification
-# # Number of trees: 125
-# # No. of variables tried at each split: 8
-# # 
-# # OOB estimate of  error rate: 11.45%
-# # Confusion matrix:
-# #   1   2 class.error
-# # 1 2421 252  0.09427609
-# # 2   62   7  0.89855072
-# 
-# ####Working on tuning parameters####
-# modelLookup(model='rf')
-# 
-# #mtry of 6, 8 are best OOB
-# x <- train_transformed[,-c(4)]
-# y <- train_transformed[,c(4)]
-# 
-# 
-# # Manual Search
-# seed <- 7
-# metric <- "Accuracy"
-# control <- trainControl(method="repeatedcv", number=10, repeats=3, search="grid")
-# tunegrid <- expand.grid(.mtry=c(sqrt(ncol(x))))
-# modellist <- list()
-# for (ntree in c(1000, 1500, 2000, 2500)) {
-#   set.seed(seed)
-#   fit <- train(Affected~., data=train_transformed, method="rf", metric=metric, tuneGrid=tunegrid, trControl=control, ntree=ntree)
-#   key <- toString(ntree)
-#   modellist[[key]] <- fit
-# }
-# # compare results
-# results <- resamples(modellist)
-# summary(results)
-# dotplot(results)
+set.seed(2)
+# wow took awhile
+rfUnbalanced <- train(make.names(Affected) ~., data=train_transformed,
+                      method="rf",
+                      ntree=1500,
+                      tuneLength=5,
+                      metric="ROC",
+                      trControl=ctrl)
 
-# set.seed(7)
-# bestmtry <- tuneRF(x, y, stepFactor=1.5, improve=1e-5, ntree=500)
-# print(bestmtry)
-# tunegrid <- expand.grid(.mtry=8)
-# # mtry <- sqrt(ncol(x))
-# # tunegrid <- expand.grid(.mtry=mtry)
-# model <- randomForest(Affected ~., data=train_transformed, sampsize=c(69,69), strata=train_transformed$Affected, ntree=500, tuneGrid=tunegrid)
-# summary(model)
-# model
-# varImpPlot(model)
+downProbs <- predict(rfDownsampled, validate_transformed, type="prob")[,1]
+downsampledROC <- roc(response = validate_transformed$Affected, 
+                      predictor = downProbs,
+                      levels = rev(levels(validate_transformed$Affected)))
+
+unbalProbs <- predict(rfUnbalanced, validate_transformed, type = "prob")[,1]
+unbalROC <- roc(response = validate_transformed$Affected, 
+                predictor = unbalProbs,
+                levels = rev(levels(validate_transformed$Affected)))
 
 
-# outcomeName<-'Affected'
-# predictors<-names(train_transformed)[!names(train_transformed) %in% outcomeName]
-# 
-# library(randomForest)
-# model1 <- randomForest(Affected~ ., data = train_transformed, importance = TRUE)
-# summary(model1)
-# 
-# 
-# # Fine tuning parameters of Random Forest model
-# model2 <- randomForest(Affected ~ ., data = train_transformed, ntree = 500, mtry = 6, importance = TRUE)
-# model2
-# summary(model2)
+plot(downsampledROC, col = rgb(1, 0, 0, .5), lwd = 2)
 
-# Predicting on train set
-predTrain <- predict(model, train_transformed, type = "class")
-# Checking classification accuracy
-table(predTrain, train_transformed$Affected)  
+plot(unbalROC, col = rgb(0, 0, 1, .5), lwd = 2, add = TRUE)
 
-
-
-
+legend(.4, .4,
+       c("Down-Sampled", "Normal"),
+       lwd = rep(2, 1), 
+       col = c(rgb(1, 0, 0, .5), rgb(0, 0, 1, .5)))
