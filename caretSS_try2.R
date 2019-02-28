@@ -126,24 +126,24 @@ affectedData$Affected = as.factor(affectedData$Affected)
 
 # ratioed smapling needs to be done here
 # here we adjust the the affecteds in each, do about 60% in validate and 40% in training so that they do not overlap. 
-require(caTools)
-set.seed(123)   #  set seed to ensure you always have same random numbers generated
-sample = sample.split(affectedData,SplitRatio = 0.60) # splits the data in the ratio mentioned in SplitRatio. After splitting marks these rows as logical TRUE and the the remaining are marked as logical FALSE
-sampleV =subset(affectedData,sample ==TRUE) # creates a training dataset named train1 with rows which are marked as TRUE
-sampleT=subset(affectedData, sample==FALSE)
-
-check <- dplyr::intersect(sampleT, sampleV)
+# require(caTools)
+# set.seed(123)   #  set seed to ensure you always have same random numbers generated
+# sample = sample.split(affectedData,SplitRatio = 0.60) # splits the data in the ratio mentioned in SplitRatio. After splitting marks these rows as logical TRUE and the the remaining are marked as logical FALSE
+# sampleV =subset(affectedData,sample ==TRUE) # creates a training dataset named train1 with rows which are marked as TRUE
+# sampleT=subset(affectedData, sample==FALSE)
+# 
+# check <- dplyr::intersect(sampleT, sampleV)
 
 
 library(gtools)
 # need to add affected data with NAs back in to impute w/ group 1
-validateData <- smartbind(group1, sampleV)
+validateData <- smartbind(group1, affectedData)
 #sort so that affected data is integrated within the control data
 validateData <- arrange(validateData, birth_year, new_index)
 
 library(gtools) 
 # need to add affected data with NAs back in to impute w/ group 2
-trainData <- smartbind(group2, sampleT)
+trainData <- smartbind(group2, affectedData)
 #sort so that affected data is integrated within the control data
 trainData <- arrange(trainData, birth_year, new_index)
 
@@ -198,44 +198,67 @@ nmin <- sum(train_transformed$Affected == 2)
 
 ctrl <- trainControl(method = "cv",
                      classProbs = TRUE,
-                     summaryFunction = twoClassSummary)
+                     search = "grid")
+                     #summaryFunction = twoClassSummary)
+
+#only allows for mtry tuning 
+tunegrid <- expand.grid(.mtry=c(1,2,8,16,20))
 
 set.seed(2)
 rfDownsampled <- train(make.names(Affected) ~., data=train_transformed,
                        method="rf",
                        ntree=1500,
-                       tuneLength=5,
+                       tuneGrid=tunegrid,
                        metric="ROC",
                        trControl=ctrl,
                        strata=train_transformed$Affected,
                        sampsize=rep(nmin,2)) 
+
+
+prediction <- predict(rfDownsampled, type = "prob")
+
+table(prediction$X1 > 0.5)
+
+#AUC-ROC Curve (higher = better at predicting affected vs. control)
+require(pROC)
+rf.roc<-roc(train_transformed$Affected, rfDownsampled$finalModel$votes[,2])
+plot(rf.roc)
+auc(rf.roc)
+
+
 #hey
 
-set.seed(2)
-# wow took awhile
-rfUnbalanced <- train(make.names(Affected) ~., data=train_transformed,
-                      method="rf",
-                      ntree=1500,
-                      tuneLength=5,
-                      metric="ROC",
-                      trControl=ctrl)
+# set.seed(2)
+# # wow took awhile (maybe don't run this if it is only for comparison???)
+# rfUnbalanced <- train(make.names(Affected) ~., data=train_transformed,
+#                       method="rf",
+#                       ntree=1500,
+#                       tuneLength=5,
+#                       metric="ROC",
+#                       trControl=ctrl)
 
-downProbs <- predict(rfDownsampled, validate_transformed, type="prob")[,1]
-downsampledROC <- roc(response = validate_transformed$Affected, 
-                      predictor = downProbs,
-                      levels = rev(levels(validate_transformed$Affected)))
 
-unbalProbs <- predict(rfUnbalanced, validate_transformed, type = "prob")[,1]
-unbalROC <- roc(response = validate_transformed$Affected, 
-                predictor = unbalProbs,
-                levels = rev(levels(validate_transformed$Affected)))
+library(pROC)
+# downProbs <- predict(rfDownsampled, validate_transformed, type="prob")[,1]
+# downsampledROC <- roc(response = validate_transformed$Affected, 
+#                       predictor = downProbs,
+#                       levels = rev(levels(validate_transformed$Affected)))
+# 
+# downsampledROC <- roc(response = validate_transformed$Affected, 
+#                       predictor = rfDownsampled$bestTune,
+#                       levels = rev(levels(validate_transformed$Affected)))
+
+# unbalProbs <- predict(rfUnbalanced, validate_transformed, type = "prob")[,1]
+# unbalROC <- roc(response = validate_transformed$Affected, 
+#                 predictor = unbalProbs,
+#                 levels = rev(levels(validate_transformed$Affected)))
 
 
 plot(downsampledROC, col = rgb(1, 0, 0, .5), lwd = 2)
 
-plot(unbalROC, col = rgb(0, 0, 1, .5), lwd = 2, add = TRUE)
+# plot(unbalROC, col = rgb(0, 0, 1, .5), lwd = 2, add = TRUE)
 
-legend(.4, .4,
-       c("Down-Sampled", "Normal"),
-       lwd = rep(2, 1), 
-       col = c(rgb(1, 0, 0, .5), rgb(0, 0, 1, .5)))
+# legend(.4, .4,
+#        c("Down-Sampled", "Normal"),
+#        lwd = rep(2, 1), 
+#        col = c(rgb(1, 0, 0, .5), rgb(0, 0, 1, .5)))
