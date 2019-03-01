@@ -1,3 +1,5 @@
+# ranger in caret
+
 #Sample data/Imputation of missing affected data/construct models from sampled data (TESTING WITH CARET PACKAGE)
 #NOTE: testing imputation early takes too long, need to impute after sampling
 #NOTE: This file specifically is focusing on stratified sampling in caret package prior to model tuning 
@@ -188,78 +190,42 @@ validate_transformed$Affected <-as.factor(validate_transformed$Affected)
 str(validate_transformed)
 
 
-##### Now testing down sampling 
-
-####works well but is way too accurate since having to use validation data as test data but they contain the same amount of affecteds 
-
-table(train_transformed$Affected)
-
-nmin <- sum(train_transformed$Affected == 2)
-
-ctrl <- trainControl(method = "cv",
-                     classProbs = TRUE,
-                     search = "grid")
-                     #summaryFunction = twoClassSummary
-
-# Algorithm Tune (tuneRF)
-# set.seed(2)
-# x <- train_transformed[,-c(4)]
-# y <- train_transformed[,c(4)]
-# bestmtry <- tuneRF(x,y, stepFactor=1.5, improve=1e-5, ntree=2000)
-# print(bestmtry)
-#8
-
-#only allows for mtry tuning
-tunegrid <- expand.grid(.mtry=c(1,2,4,6,8,12,20,30,40,50,60))
-
-rfDownsampled <- train(make.names(Affected) ~., data=train_transformed,
-                       method="rf",
-                       ntree=2500,
-                       tuneGrid=tunegrid,
-                       metric="Accuracy",
-                       trControl=ctrl,
-                       strata=train_transformed$Affected,
-                       sampsize=rep(nmin,2))
 
 
-prediction <- predict(rfDownsampled, type = "prob")
+####testing starts here ###########
 
-table(prediction$X1 > 0.5)
 
-summary(rfDownsampled)
+hyper_grid <- expand.grid(
+  mtry       = 1:10,
+  node_size  = 1:3,
+  num.trees = seq(500,2500,1000),
+  OOB_RMSE   = 0
+)
 
-#AUC-ROC Curve (higher = better at predicting affected vs. control)
-require(pROC)
-rf.roc<-roc(train_transformed$Affected, rfDownsampled$finalModel$votes[,2])
-plot(rf.roc)
-auc(rf.roc)
+library(ranger)
+system.time(
+  for(i in 1:nrow(hyper_grid)) {
+    # train model
+    rf <- ranger(
+      formula        = Affected ~ .,
+      data           = train_transformed,
+      num.trees      = hyper_grid$num.trees[i],
+      mtry           = hyper_grid$mtry[i],
+      min.node.size  = hyper_grid$node_size[i],
+      importance = 'impurity')
+    # add OOB error to grid
+    hyper_grid$OOB_RMSE[i] <- sqrt(rf$prediction.error)
+  })
 
-box <- as.data.frame(rfDownsampled$finalModel$err.rate)
-#cannot figure out
-library(ggplot2)
-# Basic box plot
-p <- ggplot(box, aes(x=X1+X2, y=OOB)) + 
-  geom_boxplot()
+nrow(hyper_grid)
+position = which.min(hyper_grid$OOB_RMSE)
+head(hyper_grid[order(hyper_grid$OOB_RMSE),],5)
 
-p
+
+rf.model <- ranger(Affected ~ .,data = train_transformed, num.trees = hyper_grid$num.trees[position], importance = 'impurity', probability = FALSE, min.node.size = hyper_grid$node_size[position], mtry = hyper_grid$mtry[position])
+rf.model
+
+varImpPlot(rf.model)
 
 
 
-# Rotate
-#gets worse if continuously runs
-#Area under the curve: 0.629 with ntree=2000
-#Area under the curve: 0.6307
-#Area under the curve: 0.6393 with ntree=2500
-#Area under the curve: 0.6604 #best so far
-
-library(pROC)
-
-
-
-plot(downsampledROC, col = rgb(1, 0, 0, .5), lwd = 2)
-
-
-# legend(.4, .4,
-#        c("Down-Sampled", "Normal"),
-#        lwd = rep(2, 1), 
-#        col = c(rgb(1, 0, 0, .5), rgb(0, 0, 1, .5)))
