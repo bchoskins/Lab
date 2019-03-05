@@ -1,8 +1,4 @@
-#Sample data/Imputation of missing affected data/construct models from sampled data (TESTING WITH CARET PACKAGE)
-#NOTE: testing imputation early takes too long, need to impute after sampling
-#NOTE: This file specifically is focusing on stratified sampling in caret package prior to model tuning 
-#NOTE: This file goes off of caretSS but adjust the amount of affecteds in the train/validate 
-# data frames because having all in both throws off the AUC-ROC predictions
+# Basic PCA
 
 data = read.delim2('goodData.csv', header = TRUE, sep = ",", dec = ",", stringsAsFactor = FALSE)
 data = data[c(-1)]
@@ -188,71 +184,22 @@ validate_transformed$Affected <-as.factor(validate_transformed$Affected)
 str(validate_transformed)
 
 
-##### Now testing down sampling 
 
-####works well but is way too accurate since having to use validation data as test data but they contain the same amount of affecteds 
+####PCA#####
 
-table(train_transformed$Affected)
+train_transformed.PCA <- prcomp(train_transformed[,-c(4)], center = TRUE,scale. = TRUE)
+summary(train_transformed.PCA)
+str(train_transformed.PCA)
 
-nmin <- sum(train_transformed$Affected == 2)
+library(devtools)
+library(ggbiplot)
 
-ctrl <- trainControl(method = "cv",
-                     classProbs = TRUE,
-                     search = "grid")
-                     #summaryFunction = twoClassSummary
-
-# Algorithm Tune (tuneRF)
-# set.seed(2)
-# x <- train_transformed[,-c(4)]
-# y <- train_transformed[,c(4)]
-# bestmtry <- tuneRF(x,y, stepFactor=1.5, improve=1e-5, ntree=2000)
-# print(bestmtry)
-#8
-
-#only allows for mtry tuning
-tunegrid <- expand.grid(.mtry=c(1,2,4,6,8,12,20,30,40,50,60))
-
-rfDownsampled <- train(make.names(Affected) ~., data=train_transformed,
-                       method="rf",
-                       ntree=2500,
-                       tuneGrid=tunegrid,
-                       metric="Accuracy",
-                       trControl=ctrl,
-                       strata=train_transformed$Affected,
-                       sampsize=rep(nmin,2))
-
-
-prediction <- predict(rfDownsampled, type = "prob")
-
-table(prediction$X1 > 0.5)
-
-summary(rfDownsampled)
-
-#AUC-ROC Curve (higher = better at predicting affected vs. control)
-require(pROC)
-rf.roc<-roc(train_transformed$Affected, rfDownsampled$finalModel$votes[,2])
-plot(rf.roc)
-auc(rf.roc)
-
-box <- as.data.frame(rfDownsampled$finalModel$err.rate)
-
-library(cowplot)
-
-pControl <- ggplot(box, aes(x = X1, y = OOB, group = 1)) +
-  geom_boxplot() + theme_bw()
-
-pAffected <- ggplot(box, aes(x = X2, y = OOB, group = 1)) +
-  geom_boxplot() + theme_bw()
-
-plot_grid(pControl, pAffected, labels = "AUTO")
+ggbiplot(train_transformed.PCA,  choices=c(1,2), obs.scale = .1, 
+         var.scale = .1, groups=train_transformed$Affected)
 
 
 
 
-# Rotate
-#gets worse if continuously runs
-#Area under the curve: 0.629 with ntree=2000
-#Area under the curve: 0.6307
-#Area under the curve: 0.6393 with ntree=2500
-#Area under the curve: 0.6604 #best so far
+
+
 
