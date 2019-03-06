@@ -1,4 +1,4 @@
-# Working with SVM Model
+# XGBTree in caret
 
 data = read.delim2('goodData.csv', header = TRUE, sep = ",", dec = ",", stringsAsFactor = FALSE)
 data = data[c(-1)]
@@ -184,69 +184,87 @@ validate_transformed$Affected <-as.factor(validate_transformed$Affected)
 str(validate_transformed)
 
 
-##### Use SVM classification model #####
-library(caTools)
-library(e1071)
+####XGBTree Modeling####
 
-trctrl <- trainControl(method = "repeatedcv", number = 10, repeats = 3, classProbs = TRUE)
-set.seed(3233)
+trctrl <- trainControl(method = "cv", number = 5)
 
-svm_Linear <- train(make.names(Affected) ~., data = train_transformed, method = "svmLinear",
-                    trControl=trctrl,
-                    preProcess = c("center", "scale"),
-                    tuneLength = 10)
-
-
-prediction <- predict(svm_Linear, type = "prob")
-
-table(prediction$X1 > 0.5)
-
-summary(svm_Linear)
-
-#AUC-ROC Curve (higher = better at predicting affected vs. control)
-require(pROC)
-svm.roc<-roc(predictor = prediction$X1, response = train_transformed$Affected,
-            levels=rev(levels(train_transformed$Affected)))
-plot(svm.roc)
-auc(svm.roc)
-#0.5318
-
-trctrl2 <- trainControl(method = "repeatedcv", number = 10, repeats = 3, classProbs = TRUE)
-grid <- expand.grid(C = c(.01, 0.05, 0.1, 0.25, 0.5, 0.75, 1, 1.25, 1.5, 1.75, 2,5))
-set.seed(3233)
-svm_Linear_Grid <- train(make.names(Affected) ~., data = train_transformed, method = "svmLinear",
-                           trControl=trctrl2,
-                           preProcess = c("center", "scale"),
-                           tuneGrid = grid,
-                           tuneLength = 10)
-svm_Linear_Grid
-plot(svm_Linear_Grid)
-
-
-prediction2 <- predict(svm_Linear_Grid, type = "prob")
-
-table(prediction2$X1 > 0.5)
-
-summary(svm_Linear_Grid)
-
-#AUC-ROC Curve (higher = better at predicting affected vs. control)
-require(pROC)
-svm.roc<-roc(predictor = prediction2$X1, response = train_transformed$Affected,
-             levels=rev(levels(train_transformed$Affected)))
-plot(svm.roc)
-auc(svm.roc)
-#Area under the curve: 0.585
+tune_grid <- expand.grid(nrounds=c(50, 100),
+                        max_depth = c(5:10),
+                        eta = c(0.001, 0.05),
+                        gamma = c(0.01, 1, 2),
+                        colsample_bytree = c(0.75, 1.0),
+                        subsample = c(0.75),
+                        min_child_weight = c(0, 0.5, 1))
 
 
 
 
+# library(h2o)
+# h2o.init()
+# 
+# y <- "Affected"
+# x <- setdiff(names(train_transformed), y)
+# 
+# # Some XGboost/GBM hyperparameters
+# hyper_params <- list(ntrees = seq(10, 1000, 50),
+#                      learn_rate = seq(0.0001, 0.2, 0.0001),
+#                      max_depth = seq(1, 20, 1),
+#                      min_child_weight = seq(0, 1, 0.1),
+#                      sample_rate = seq(0.5, 1.0, 0.0001),
+#                      col_sample_rate = seq(0.2, 1.0, 0.0001))
+# 
+# search_criteria <- list(strategy = "RandomDiscrete",
+#                         max_models = 10, 
+#                         seed = 1)
+# 
+# # Train the grid
+# xgb_grid <- h2o.grid(algorithm = "xgboost",
+#                      x = x, y = y,
+#                      training_frame = as.h2o(train_transformed),
+#                      nfolds = 5,
+#                      seed = 1,
+#                      hyper_params = hyper_params,
+#                      search_criteria = search_criteria)
+# 
+# 
+# # Sort the grid by CV AUC
+# grid <- h2o.getGrid(grid_id = xgb_grid@grid_id, sort_by = "AUC", decreasing = TRUE)
+# grid_top_model <- grid@summary_table[1, "model_ids"]
+# 
+# h2o.shutdown()
 
 
 
 
+rf_fit <- train(Affected ~., data = train_transformed, method = "xgbTree",
+                trControl=trctrl,
+                tuneGrid = tune_grid,
+                tuneLength = 10)
+
+rf_fit
+
+rf_fit$bestTune
+plot(rf_fit)
+
+res <- rf_fit$results
+res
 
 
 
+xgb.probs <- predict(rf_fit,type="prob")
+head(xgb.probs)
+
+library(pROC)
+xgb.ROC <- roc(predictor=xgb.probs$`1`,
+               response=train_transformed$Affected,
+               levels=rev(levels(train_transformed$Affected)))
+
+xgb.ROC$auc
+plot(xgb.ROC,main="xgboost ROC")
+
+# eta max_depth gamma colsample_bytree min_child_weight subsample nrounds  Accuracy        Kappa   AccuracySD
+# 0.001       5  0.01             0.75              0.0       0.5      50 0.9749728  0.000000000 0.0000000000
+# Area under the curve: 0.65
 
 
 

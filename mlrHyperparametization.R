@@ -1,4 +1,4 @@
-# Working with SVM Model
+#mlr hyperparametization practice
 
 data = read.delim2('goodData.csv', header = TRUE, sep = ",", dec = ",", stringsAsFactor = FALSE)
 data = data[c(-1)]
@@ -184,73 +184,100 @@ validate_transformed$Affected <-as.factor(validate_transformed$Affected)
 str(validate_transformed)
 
 
-##### Use SVM classification model #####
-library(caTools)
-library(e1071)
-
-trctrl <- trainControl(method = "repeatedcv", number = 10, repeats = 3, classProbs = TRUE)
-set.seed(3233)
-
-svm_Linear <- train(make.names(Affected) ~., data = train_transformed, method = "svmLinear",
-                    trControl=trctrl,
-                    preProcess = c("center", "scale"),
-                    tuneLength = 10)
+#####Playing around with mlr hyperparameterization#####
 
 
-prediction <- predict(svm_Linear, type = "prob")
-
-table(prediction$X1 > 0.5)
-
-summary(svm_Linear)
-
-#AUC-ROC Curve (higher = better at predicting affected vs. control)
-require(pROC)
-svm.roc<-roc(predictor = prediction$X1, response = train_transformed$Affected,
-            levels=rev(levels(train_transformed$Affected)))
-plot(svm.roc)
-auc(svm.roc)
-#0.5318
-
-trctrl2 <- trainControl(method = "repeatedcv", number = 10, repeats = 3, classProbs = TRUE)
-grid <- expand.grid(C = c(.01, 0.05, 0.1, 0.25, 0.5, 0.75, 1, 1.25, 1.5, 1.75, 2,5))
-set.seed(3233)
-svm_Linear_Grid <- train(make.names(Affected) ~., data = train_transformed, method = "svmLinear",
-                           trControl=trctrl2,
-                           preProcess = c("center", "scale"),
-                           tuneGrid = grid,
-                           tuneLength = 10)
-svm_Linear_Grid
-plot(svm_Linear_Grid)
+#Specify search space
+library(mlr)
+num_ps = makeParamSet(
+  makeNumericParam("C", lower = -10, upper = 10, trafo = function(x) 10^x),
+  makeNumericParam("sigma", lower = -10, upper = 10, trafo = function(x) 10^x)
+)
 
 
-prediction2 <- predict(svm_Linear_Grid, type = "prob")
+#Specify optimization algorithm (note random grid search with non-discrete space)
+ctrl = makeTuneControlRandom(maxit = 200L)
 
-table(prediction2$X1 > 0.5)
+# evaluation method
+rdesc = makeResampleDesc("CV", iters = 3L)
+measure = acc
 
-summary(svm_Linear_Grid)
+affected.task <- makeClassifTask(data = train_transformed, target = "Affected")
 
-#AUC-ROC Curve (higher = better at predicting affected vs. control)
-require(pROC)
-svm.roc<-roc(predictor = prediction2$X1, response = train_transformed$Affected,
-             levels=rev(levels(train_transformed$Affected)))
-plot(svm.roc)
-auc(svm.roc)
-#Area under the curve: 0.585
+res = tuneParams("classif.ksvm", task = affected.task, resampling = rdesc, par.set = num_ps,
+                 control = ctrl, measures = list(acc, setAggregation(acc, test.sd)), show.info = FALSE)
+res
+# Tune result:
+#   Op. pars: C=1.63e-05; sigma=2.7e-10
+# acc.test.mean=0.9746137,acc.test.sd=0.0048111
 
+res$x
+# $C
+# [1] 1.632365e-05
+# 
+# $sigma
+# [1] 2.703121e-10
 
+res$y
+# acc.test.mean   acc.test.sd 
+# 0.974613687   0.004811147
 
+#We can generate a Learner (makeLearner()) with optimal hyperparameter settings as follows:
+  
+lrn = setHyperPars(makeLearner("classif.ksvm"), par.vals = res$x)
+lrn
 
+m = train(lrn, affected.task)
+predict(m, task = affected.task)
+# Prediction: 2718 observations
+# predict.type: response
+# threshold: 
+#   time: 0.05
+# id truth response
+# 1  1     1        1
+# 2  2     1        1
+# 3  3     1        1
+# 4  4     1        1
+# 5  5     1        1
+# 6  6     1        1
+# ... (#rows: 2718, #cols: 3)
 
+generateHyperParsEffectData(res, trafo = TRUE)
+# HyperParsEffectData:
+#   Hyperparameters: C,sigma
+# Measures: acc.test.mean,acc.test.sd
+# Optimizer: TuneControlRandom
+# Nested CV Used: FALSE
+# Snapshot of data:
+#   C        sigma acc.test.mean acc.test.sd iteration exec.time
+# 1 1.525427e-02 1.081223e+03     0.9746137 0.004811147         1     1.000
+# 2 4.266587e-03 4.222873e-07     0.9746137 0.004811147         2     0.235
+# 3 6.361840e+05 1.434911e-02     0.9687270 0.003372020         3     0.601
+# 4 1.005891e-04 3.843823e-04     0.9746137 0.004811147         4     0.292
+# 5 3.505891e+06 1.161510e-09     0.9746137 0.004811147         5     0.285
+# 6 8.850142e+03 1.206735e+04     0.9746137 0.004811147         6     1.846
 
+rdesc2 = makeResampleDesc("Holdout", predict = "both")
+res2 = tuneParams("classif.ksvm", task = affected.task, resampling = rdesc2, par.set = num_ps,
+                  control = ctrl, measures = list(acc, setAggregation(acc, train.mean)), show.info = FALSE)
+generateHyperParsEffectData(res2)
+# HyperParsEffectData:
+#   Hyperparameters: C,sigma
+# Measures: acc.test.mean,acc.train.mean
+# Optimizer: TuneControlRandom
+# Nested CV Used: FALSE
+# Snapshot of data:
+#   C     sigma acc.test.mean acc.train.mean iteration exec.time
+# 1 -4.211252  6.619828     0.9757174      0.9740618         1     0.123
+# 2 -7.464004 -8.097836     0.9757174      0.9740618         2     0.128
+# 3  3.636032  7.161010     0.9757174      1.0000000         3     0.905
+# 4  3.307510 -2.632518     0.9525386      1.0000000         4     0.312
+# 5 -9.599643  3.156519     0.9757174      0.9740618         5     0.108
+# 6 -5.620907 -4.862705     0.9757174      0.9740618         6     0.113
 
-
-
-
-
-
-
-
-
-
-
+res = tuneParams("classif.ksvm", task = affected.task, resampling = rdesc, par.set = num_ps,
+                 control = ctrl, measures = list(acc, mmce), show.info = FALSE)
+data = generateHyperParsEffectData(res)
+plotHyperParsEffect(data, x = "iteration", y = "acc.test.mean",
+                    plot.type = "line")
 

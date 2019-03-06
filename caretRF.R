@@ -1,4 +1,8 @@
-# Working with SVM Model
+#Sample data/Imputation of missing affected data/construct models from sampled data (TESTING WITH CARET PACKAGE)
+#NOTE: testing imputation early takes too long, need to impute after sampling
+#NOTE: This file specifically is focusing on stratified sampling in caret package prior to model tuning 
+#NOTE: This file goes off of caretSS but adjust the amount of affecteds in the train/validate 
+# data frames because having all in both throws off the AUC-ROC predictions
 
 data = read.delim2('goodData.csv', header = TRUE, sep = ",", dec = ",", stringsAsFactor = FALSE)
 data = data[c(-1)]
@@ -184,73 +188,72 @@ validate_transformed$Affected <-as.factor(validate_transformed$Affected)
 str(validate_transformed)
 
 
-##### Use SVM classification model #####
-library(caTools)
-library(e1071)
+##### Now testing down sampling 
 
-trctrl <- trainControl(method = "repeatedcv", number = 10, repeats = 3, classProbs = TRUE)
-set.seed(3233)
+####works well but is way too accurate since having to use validation data as test data but they contain the same amount of affecteds 
 
-svm_Linear <- train(make.names(Affected) ~., data = train_transformed, method = "svmLinear",
-                    trControl=trctrl,
-                    preProcess = c("center", "scale"),
-                    tuneLength = 10)
+table(train_transformed$Affected)
+
+nmin <- sum(train_transformed$Affected == 2)
+
+ctrl <- trainControl(method = "cv",
+                     classProbs = TRUE,
+                     search = "random")
+                     #summaryFunction = twoClassSummary
+
+# Algorithm Tune (tuneRF)
+# set.seed(2)
+# x <- train_transformed[,-c(4)]
+# y <- train_transformed[,c(4)]
+# bestmtry <- tuneRF(x,y, stepFactor=1.5, improve=1e-5, ntree=2000)
+# print(bestmtry)
+#8
+
+#only allows for mtry tuning
+#tunegrid <- expand.grid(.mtry=c(1,2,4,6,8,12,20,30,40,50,60))
+
+rfDownsampled <- train(make.names(Affected) ~., data=train_transformed,
+                       method="rf",
+                       ntree=2500,
+                       tuneLength=20,
+                       metric="Accuracy",
+                       trControl=ctrl,
+                       strata=train_transformed$Affected,
+                       sampsize=rep(nmin,2))
 
 
-prediction <- predict(svm_Linear, type = "prob")
+prediction <- predict(rfDownsampled, type = "prob")
 
 table(prediction$X1 > 0.5)
 
-summary(svm_Linear)
+summary(rfDownsampled)
 
 #AUC-ROC Curve (higher = better at predicting affected vs. control)
 require(pROC)
-svm.roc<-roc(predictor = prediction$X1, response = train_transformed$Affected,
-            levels=rev(levels(train_transformed$Affected)))
-plot(svm.roc)
-auc(svm.roc)
-#0.5318
+rf.roc<-roc(train_transformed$Affected, rfDownsampled$finalModel$votes[,2])
+plot(rf.roc)
+auc(rf.roc)
 
-trctrl2 <- trainControl(method = "repeatedcv", number = 10, repeats = 3, classProbs = TRUE)
-grid <- expand.grid(C = c(.01, 0.05, 0.1, 0.25, 0.5, 0.75, 1, 1.25, 1.5, 1.75, 2,5))
-set.seed(3233)
-svm_Linear_Grid <- train(make.names(Affected) ~., data = train_transformed, method = "svmLinear",
-                           trControl=trctrl2,
-                           preProcess = c("center", "scale"),
-                           tuneGrid = grid,
-                           tuneLength = 10)
-svm_Linear_Grid
-plot(svm_Linear_Grid)
+box <- as.data.frame(rfDownsampled$finalModel$err.rate)
 
+library(cowplot)
 
-prediction2 <- predict(svm_Linear_Grid, type = "prob")
+pControl <- ggplot(box, aes(x = X1, y = OOB, group = 1)) +
+  geom_boxplot() + theme_bw()
 
-table(prediction2$X1 > 0.5)
+pAffected <- ggplot(box, aes(x = X2, y = OOB, group = 1)) +
+  geom_boxplot() + theme_bw()
 
-summary(svm_Linear_Grid)
-
-#AUC-ROC Curve (higher = better at predicting affected vs. control)
-require(pROC)
-svm.roc<-roc(predictor = prediction2$X1, response = train_transformed$Affected,
-             levels=rev(levels(train_transformed$Affected)))
-plot(svm.roc)
-auc(svm.roc)
-#Area under the curve: 0.585
+plot_grid(pControl, pAffected, labels = "AUTO")
 
 
 
 
-
-
-
-
-
-
-
-
-
-
-
-
-
+# Rotate
+# lates: Area under the curve: 0.6016
+#gets worse if continuously runs
+#Area under the curve: 0.629 with ntree=2000
+#Area under the curve: 0.6307
+#Area under the curve: 0.6393 with ntree=2500
+#Area under the curve: 0.6604 #best so far
 
