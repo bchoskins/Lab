@@ -184,6 +184,51 @@ validate_transformed$Affected <-as.factor(validate_transformed$Affected)
 str(validate_transformed)
 
 
+# ##### Up and Down sampling ######
+# up_df <- upSample(x = train_transformed[, -ncol(train_transformed)],y = train_transformed$Affected)
+# up_df <- as.data.frame(up_df)
+# 
+# trctrl <- trainControl(method = "cv", number = 5)
+# 
+# tune_grid <- expand.grid(nrounds=c(50, 100),
+#                          max_depth = c(5:10),
+#                          eta = c(0.001, 0.05),
+#                          gamma = c(0.01, 1, 2),
+#                          colsample_bytree = c(0.75, 1.0),
+#                          subsample = c(0.75),
+#                          min_child_weight = c(0, 0.5, 1))
+# 
+# 
+# 
+# rf_fit <- caret::train(make.names(Affected) ~., data = up_df, method = "xgbTree",
+#                 trControl=trctrl,
+#                 tuneGrid = tune_grid,
+#                 tuneLength = 10)
+# 
+# rf_fit
+# 
+# rf_fit$bestTune
+# plot(rf_fit)
+# 
+# res <- rf_fit$results
+# res
+# 
+# 
+# 
+# xgb.probs <- predict(rf_fit,type="prob")
+# head(xgb.probs)
+# 
+# library(pROC)
+# xgb.ROC <- roc(predictor=xgb.probs$`X1`,
+#                response=up_df$Affected,
+#                levels=rev(levels(up_df$Affected)))
+# 
+# xgb.ROC$auc
+# plot(xgb.ROC,main="xgboost ROC")
+# 
+# 
+# ###END####
+
 ####XGBTree Modeling####
 
 trctrl <- trainControl(method = "cv", number = 5)

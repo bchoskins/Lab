@@ -1,4 +1,4 @@
-#Sample data/Imputation of missing affected data/construct models from sampled data (TESTING WITH CARET PACKAGE)
+ #Sample data/Imputation of missing affected data/construct models from sampled data (TESTING WITH CARET PACKAGE)
 #NOTE: testing imputation early takes too long, need to impute after sampling
 #NOTE: This file specifically is focusing on stratified sampling in caret package prior to model tuning 
 #NOTE: This file goes off of caretSS but adjust the amount of affecteds in the train/validate 
@@ -14,7 +14,7 @@ affectedData <- select(filter(data, Affected == 1), c(1:65))
 ratioAffected <- sum(affectedData$gender == "F")/sum(affectedData$gender == "M")
 #ratioAffected = 0.4081633
 
-library(plyr)
+library(dplyr)
 # gets rid of two unneeded categories for gender
 df <- select(filter(data, gender != "U" & gender != ""), c(1:65))
 # imputation is done later with one control group (group1) and all affected observations
@@ -133,7 +133,6 @@ affectedData$Affected = as.factor(affectedData$Affected)
 # sampleT=subset(affectedData, sample==FALSE)
 # 
 # check <- dplyr::intersect(sampleT, sampleV)
-
 
 library(gtools)
 # need to add affected data with NAs back in to impute w/ group 1
