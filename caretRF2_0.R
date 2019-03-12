@@ -1,8 +1,4 @@
- #Sample data/Imputation of missing affected data/construct models from sampled data (TESTING WITH CARET PACKAGE)
-#NOTE: testing imputation early takes too long, need to impute after sampling
-#NOTE: This file specifically is focusing on stratified sampling in caret package prior to model tuning 
-#NOTE: This file goes off of caretSS but adjust the amount of affecteds in the train/validate 
-# data frames because having all in both throws off the AUC-ROC predictions
+# Caret Random Forest Down Sampled 2.0 
 
 data = read.delim2('goodData.csv', header = TRUE, sep = ",", dec = ",", stringsAsFactor = FALSE)
 data = data[c(-1)]
@@ -189,71 +185,84 @@ str(validate_transformed)
 
 ##### Now testing down sampling 
 
-####works well but is way too accurate since having to use validation data as test data but they contain the same amount of affecteds 
+library(caTools)
+sample = sample.split(train_transformed,SplitRatio = 0.75) 
+train1 =subset(train_transformed,sample ==TRUE) 
+test1=subset(train_transformed, sample==FALSE)
 
-table(train_transformed$Affected)
+table(train1$Affected)
 
-nmin <- sum(train_transformed$Affected == 2)
+nmin <- sum(train1$Affected == 2)
 
 ctrl <- trainControl(method = "cv",
-                     classProbs = TRUE,
-                     search = "random")
-                     #summaryFunction = twoClassSummary
+                      classProbs = TRUE,
+                      summaryFunction = twoClassSummary)
 
-# Algorithm Tune (tuneRF)
-# set.seed(2)
-# x <- train_transformed[,-c(4)]
-# y <- train_transformed[,c(4)]
-# bestmtry <- tuneRF(x,y, stepFactor=1.5, improve=1e-5, ntree=2000)
-# print(bestmtry)
-#8
-
-#only allows for mtry tuning
-#tunegrid <- expand.grid(.mtry=c(1,2,4,6,8,12,20,30,40,50,60))
-
-rfDownsampled <- train(make.names(Affected) ~., data=train_transformed,
-                       method="rf",
-                       ntree=2500,
-                       tuneLength=20,
-                       metric="Accuracy",
-                       trControl=ctrl,
-                       strata=train_transformed$Affected,
-                       sampsize=rep(nmin,2))
+rfDownsampled <- caret::train(make.names(Affected) ~ ., data = train1,
+                        method = "rf",
+                        ntree = 1500,
+                        tuneLength = 5,
+                        metric = "ROC",
+                        trControl = ctrl,
+                        ## Tell randomForest to sample by strata. Here, 
+                        ## that means within each class
+                        strata = train1$Affected,
+                        ## Now specify that the number of samples selected
+                        ## within each class should be the same
+                        sampsize = rep(nmin, 2))
 
 
-prediction <- predict(rfDownsampled, type = "prob")
+rfUnbalanced <- caret::train(make.names(Affected) ~ ., data = train1,
+                       method = "rf",
+                       ntree = 1500,
+                       tuneLength = 5,
+                       metric = "ROC",
+                       trControl = ctrl)
 
-table(prediction$X1 > 0.5)
+downProbs <- predict(rfDownsampled, test1, type = "prob")[,1]
 
-summary(rfDownsampled)
+downsampledROC <- roc(response = test1$Affected, 
+                       predictor = downProbs,
+                       levels = rev(levels(test1$Affected)))
 
-#AUC-ROC Curve (higher = better at predicting affected vs. control)
-require(pROC)
-rf.roc<-roc(train_transformed$Affected, rfDownsampled$finalModel$votes[,2])
-plot(rf.roc)
-auc(rf.roc)
+unbalProbs <- predict(rfUnbalanced, test1, type = "prob")[,1]
 
-box <- as.data.frame(rfDownsampled$finalModel$err.rate)
+unbalROC <- roc(response = test1$Affected, 
+                 predictor = unbalProbs,
+                 levels = rev(levels(test1$Affected)))
 
-library(cowplot)
+plot(downsampledROC, col = rgb(1, 0, 0, .5), lwd = 2)
 
-pControl <- ggplot(box, aes(x = X1, y = OOB, group = 1)) +
-  geom_boxplot() + theme_bw()
+plot(unbalROC, col = rgb(0, 0, 1, .5), lwd = 2, add = TRUE)
 
-pAffected <- ggplot(box, aes(x = X2, y = OOB, group = 1)) +
-  geom_boxplot() + theme_bw()
+legend(.4, .4,
+        c("Down-Sampled", "Normal"),
+       lwd = rep(2, 1),
+        col = c(rgb(1, 0, 0, .5), rgb(0, 0, 1, .5)))
 
-plot_grid(pControl, pAffected, labels = "AUTO")
+getTrainPerf(rfDownsampled)
+
+auc(downsampledROC)
+
+
+
+#### with 0.75 split and ntree = 1500, tune = 5
+#Area under the curve: 0.7104
 
 
 
 
-# Rotate
-# lates: Area under the curve: 0.6016
-#gets worse if continuously runs
-#Area under the curve: 0.629 with ntree=2000
-#Area under the curve: 0.6307
-#Area under the curve: 0.6393 with ntree=2500
-#Area under the curve: 0.6604 #best so far
+# sample of down sampling example data set sizes
+# set.seed(1)
+# Ttraining <- twoClassSim(500, intercept = -13)
+# Ttesting <- twoClassSim(5000, intercept = -13)
+# > table(Ttraining$Class)
+# 
+# Class1 Class2 
+# 428     72 
+# > table(Ttesting$Class)
+# 
+# Class1 Class2 
+# 4299    701 
 
 
