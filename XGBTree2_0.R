@@ -1,4 +1,4 @@
-# Caret Random Forest Down Sampled 2.0 
+# XGBTree in caret 2.0
 
 data = read.delim2('goodData.csv', header = TRUE, sep = ",", dec = ",", stringsAsFactor = FALSE)
 data = data[c(-1)]
@@ -10,7 +10,7 @@ affectedData <- select(filter(data, Affected == 1), c(1:65))
 ratioAffected <- sum(affectedData$gender == "F")/sum(affectedData$gender == "M")
 #ratioAffected = 0.4081633
 
-library(dplyr)
+library(plyr)
 # gets rid of two unneeded categories for gender
 df <- select(filter(data, gender != "U" & gender != ""), c(1:65))
 # imputation is done later with one control group (group1) and all affected observations
@@ -130,6 +130,7 @@ affectedData$Affected = as.factor(affectedData$Affected)
 # 
 # check <- dplyr::intersect(sampleT, sampleV)
 
+
 library(gtools)
 # need to add affected data with NAs back in to impute w/ group 1
 validateData <- smartbind(group1, affectedData)
@@ -145,9 +146,6 @@ trainData <- arrange(trainData, birth_year, new_index)
 
 #***GOOD TO HERE***
 #******************
-
-#### Maybe work here on normalizing
-
 
 sum(is.na(trainData))
 sum(is.na(validateData))
@@ -186,53 +184,212 @@ validate_transformed$Affected <-as.factor(validate_transformed$Affected)
 str(validate_transformed)
 
 
-##### Now testing down sampling 
-
-library(caTools)
-sample = sample.split(train_transformed,SplitRatio = 0.75) 
-train1 =subset(train_transformed,sample ==TRUE) 
-test1=subset(train_transformed, sample==FALSE)
-
-table(train1$Affected)
-
-nmin <- sum(train1$Affected == 2)
-
-ctrl <- trainControl(method = "cv",
-                      classProbs = TRUE,
-                      summaryFunction = twoClassSummary)
-                      #search ="random")
-
-
-rfDownsampled <- caret::train(make.names(Affected) ~ ., data = train1,
-                        method = "rf",
-                        ntree = 1500,
-                        tuneLength = 5,
-                        metric = "ROC",
-                        trControl = ctrl,
-                        ## Tell randomForest to sample by strata. Here,
-                        ## that means within each class
-                        strata = train1$Affected,
-                        ## Now specify that the number of samples selected
-                        ## within each class should be the same
-                        sampsize = rep(nmin, 2))
-
-downProbs <- predict(rfDownsampled, test1, type = "prob")[,1]
-
-downsampledROC <- roc(response = test1$Affected, 
-                       predictor = downProbs,
-                       levels = rev(levels(test1$Affected)))
-
-plot(downsampledROC, col = rgb(1, 0, 0, .5), lwd = 2)
-
-getTrainPerf(rfDownsampled)
-
-auc(downsampledROC)
-
-
-
-#### with 0.75 split and ntree = 1500, tune = 5
-#Area under the curve: 0.7104
-# Area under the curve: 0.5716
+# ##### Up and Down sampling ######
+# up_df <- upSample(x = train_transformed[, -ncol(train_transformed)],y = train_transformed$Affected)
+# up_df <- as.data.frame(up_df)
+# 
+# trctrl <- trainControl(method = "cv", number = 5)
+# 
+# tune_grid <- expand.grid(nrounds=c(50, 100),
+#                          max_depth = c(5:10),
+#                          eta = c(0.001, 0.05),
+#                          gamma = c(0.01, 1, 2),
+#                          colsample_bytree = c(0.75, 1.0),
+#                          subsample = c(0.75),
+#                          min_child_weight = c(0, 0.5, 1))
+# 
+# 
+# 
+# rf_fit <- caret::train(make.names(Affected) ~., data = up_df, method = "xgbTree",
+#                 trControl=trctrl,
+#                 tuneGrid = tune_grid,
+#                 tuneLength = 10)
+# 
+# rf_fit
+# 
+# rf_fit$bestTune
+# plot(rf_fit)
+# 
+# res <- rf_fit$results
+# res
+# 
+# 
+# 
+# xgb.probs <- predict(rf_fit,type="prob")
+# head(xgb.probs)
+# 
+# library(pROC)
+# xgb.ROC <- roc(predictor=xgb.probs$`X1`,
+#                response=up_df$Affected,
+#                levels=rev(levels(up_df$Affected)))
+# 
+# xgb.ROC$auc
+# plot(xgb.ROC,main="xgboost ROC")
+# 
+# 
+# ###END####
 
 
 
+
+
+# library(h2o)
+# h2o.init()
+# 
+# y <- "Affected"
+# x <- setdiff(names(train_transformed), y)
+# 
+# # Some XGboost/GBM hyperparameters
+# hyper_params <- list(ntrees = seq(10, 1000, 50),
+#                      learn_rate = seq(0.0001, 0.2, 0.0001),
+#                      max_depth = seq(1, 20, 1),
+#                      min_child_weight = seq(0, 1, 0.1),
+#                      sample_rate = seq(0.5, 1.0, 0.0001),
+#                      col_sample_rate = seq(0.2, 1.0, 0.0001))
+# 
+# search_criteria <- list(strategy = "RandomDiscrete",
+#                         max_models = 10, 
+#                         seed = 1)
+# 
+# # Train the grid
+# xgb_grid <- h2o.grid(algorithm = "xgboost",
+#                      x = x, y = y,
+#                      training_frame = as.h2o(train_transformed),
+#                      nfolds = 5,
+#                      seed = 1,
+#                      hyper_params = hyper_params,
+#                      search_criteria = search_criteria)
+# 
+# 
+# # Sort the grid by CV AUC
+# grid <- h2o.getGrid(grid_id = xgb_grid@grid_id, sort_by = "AUC", decreasing = TRUE)
+# grid_top_model <- grid@summary_table[1, "model_ids"]
+# 
+# h2o.shutdown()
+
+
+
+####XGBTree Modeling####
+
+#####re look at code from example, have to make adjustments to train and test sets
+
+dt = sort(sample(nrow(train_transformed), nrow(train_transformed)*.75))
+train<-train_transformed[dt,]
+test<-train_transformed[-dt,]
+
+table(train$Affected)
+
+trctrl <- trainControl(method = "cv", number = 5)
+
+tune_grid <- expand.grid(nrounds=c(50, 100),
+                         max_depth = c(5:10),
+                         eta = c(0.001, 0.05),
+                         gamma = c(0.01, 1, 2),
+                         colsample_bytree = c(0.75, 1.0),
+                         subsample = c(0.75),
+                         min_child_weight = c(0, 0.5, 1))
+
+
+rf_fit <- caret::train(make.names(Affected) ~., data = train, method = "xgbTree",
+                trControl=trctrl,
+                tuneGrid = tune_grid,
+                tuneLength = 10)
+
+# rf_fit$bestTune
+# plot(rf_fit)  		# Plot the performance of the training models
+# res <- rf_fit$results
+# res
+# 
+# ### xgboostModel Predictions and Performance
+# # Make predictions using the test data set
+# xgb.pred <- predict(rf_fit,test)
+# 
+# # #Look at the confusion matrix  
+# # confusionMatrix(xgb.pred,testData$Class)   
+# 
+# #Draw the ROC curve 
+# xgb.probs <- predict(rf_fit,test,type="prob")
+# #head(xgb.probs)
+# 
+# xgb.ROC <- roc(predictor=xgb.probs$PS,
+#                response=testData$Class,
+#                levels=rev(levels(testData$Class)))
+# xgb.ROC$auc
+# # Area under the curve: 0.8857
+# 
+# plot(xgb.ROC,main="xgboost ROC")
+# # Plot the propability of poor segmentation
+# histogram(~xgb.probs$PS|testData$Class,xlab="Probability of Poor Segmentation")
+
+
+# 
+# rf_fit
+# 
+# rf_fit$bestTune
+# plot(rf_fit)
+# 
+# res <- rf_fit$results
+# res
+# 
+# 
+# 
+# xgb.probs <- predict(rf_fit,type="prob")
+# head(xgb.probs)
+# 
+# library(pROC)
+# xgb.ROC <- roc(predictor=xgb.probs$`1`,
+#                response=train$Affected,
+#                levels=rev(levels(train$Affected)))
+# 
+# xgb.ROC$auc
+# plot(xgb.ROC,main="xgboost ROC")
+
+
+#### Secondary XGBTree modleing ####
+# 
+# ## XGBOOST
+# # Some stackexchange guidance for xgboost
+# # http://stats.stackexchange.com/questions/171043/how-to-tune-hyperparameters-of-xgboost-trees
+# 
+# # Set up for parallel procerssing
+# set.seed(1951)
+# registerDoParallel(4,cores=4)
+# getDoParWorkers()
+# 
+# # Train xgboost
+# xgb.grid <- expand.grid(nrounds = 500, #the maximum number of iterations
+#                         eta = c(0.01,0.1), # shrinkage
+#                         max_depth = c(2,6,10))
+# 
+# xgb.tune <-train(x=trainX,y=trainData$Class,
+#                  method="xgbTree",
+#                  metric="ROC",
+#                  trControl=ctrl,
+#                  tuneGrid=xgb.grid)
+# 
+# 
+# xgb.tune$bestTune
+# plot(xgb.tune)  		# Plot the performance of the training models
+# res <- xgb.tune$results
+# res
+# 
+# ### xgboostModel Predictions and Performance
+# # Make predictions using the test data set
+# xgb.pred <- predict(xgb.tune,testX)
+# 
+# #Look at the confusion matrix  
+# confusionMatrix(xgb.pred,testData$Class)   
+# 
+# #Draw the ROC curve 
+# xgb.probs <- predict(xgb.tune,testX,type="prob")
+# #head(xgb.probs)
+# 
+# xgb.ROC <- roc(predictor=xgb.probs$PS,
+#                response=testData$Class,
+#                levels=rev(levels(testData$Class)))
+# xgb.ROC$auc
+# # Area under the curve: 0.8857
+# 
+# plot(xgb.ROC,main="xgboost ROC")
+# # Plot the propability of poor segmentation
+# histogram(~xgb.probs$PS|testData$Class,xlab="Probability of Poor Segmentation")
