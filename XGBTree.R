@@ -281,7 +281,7 @@ tune_grid <- expand.grid(nrounds=c(50, 100),
 
 
 
-rf_fit <- train(Affected ~., data = train_transformed, method = "xgbTree",
+rf_fit <- caret::train(Affected ~., data = train_transformed, method = "xgbTree",
                 trControl=trctrl,
                 tuneGrid = tune_grid,
                 tuneLength = 10)

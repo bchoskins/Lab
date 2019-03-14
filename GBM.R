@@ -1,4 +1,4 @@
-# Caret Random Forest Down Sampled 2.0 
+# GBM in caret
 
 data = read.delim2('goodData.csv', header = TRUE, sep = ",", dec = ",", stringsAsFactor = FALSE)
 data = data[c(-1)]
@@ -10,7 +10,7 @@ affectedData <- select(filter(data, Affected == 1), c(1:65))
 ratioAffected <- sum(affectedData$gender == "F")/sum(affectedData$gender == "M")
 #ratioAffected = 0.4081633
 
-library(dplyr)
+library(plyr)
 # gets rid of two unneeded categories for gender
 df <- select(filter(data, gender != "U" & gender != ""), c(1:65))
 # imputation is done later with one control group (group1) and all affected observations
@@ -130,6 +130,7 @@ affectedData$Affected = as.factor(affectedData$Affected)
 # 
 # check <- dplyr::intersect(sampleT, sampleV)
 
+
 library(gtools)
 # need to add affected data with NAs back in to impute w/ group 1
 validateData <- smartbind(group1, affectedData)
@@ -145,9 +146,6 @@ trainData <- arrange(trainData, birth_year, new_index)
 
 #***GOOD TO HERE***
 #******************
-
-#### Maybe work here on normalizing
-
 
 sum(is.na(trainData))
 sum(is.na(validateData))
@@ -184,55 +182,3 @@ str(train_transformed)
 
 validate_transformed$Affected <-as.factor(validate_transformed$Affected)
 str(validate_transformed)
-
-
-##### Now testing down sampling 
-
-library(caTools)
-sample = sample.split(train_transformed,SplitRatio = 0.75) 
-train1 =subset(train_transformed,sample ==TRUE) 
-test1=subset(train_transformed, sample==FALSE)
-
-table(train1$Affected)
-
-nmin <- sum(train1$Affected == 2)
-
-ctrl <- trainControl(method = "cv",
-                      classProbs = TRUE,
-                      summaryFunction = twoClassSummary,
-                      search ="random")
-
-
-rfDownsampled <- caret::train(make.names(Affected) ~ ., data = train1,
-                        method = "rf",
-                        # ntree = 1500,
-                        # tuneLength = 5,
-                        metric = "ROC",
-                        trControl = ctrl,
-                        ## Tell randomForest to sample by strata. Here,
-                        ## that means within each class
-                        strata = train1$Affected,
-                        ## Now specify that the number of samples selected
-                        ## within each class should be the same
-                        sampsize = rep(nmin, 2))
-
-downProbs <- predict(rfDownsampled, test1, type = "prob")[,1]
-
-downsampledROC <- roc(response = test1$Affected, 
-                       predictor = downProbs,
-                       levels = rev(levels(test1$Affected)))
-
-plot(downsampledROC, col = rgb(1, 0, 0, .5), lwd = 2)
-
-getTrainPerf(rfDownsampled)
-
-auc(downsampledROC)
-
-
-
-#### with 0.75 split and ntree = 1500, tune = 5
-#Area under the curve: 0.7104
-# Area under the curve: 0.5716
-
-
-
