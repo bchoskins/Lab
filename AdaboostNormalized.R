@@ -179,26 +179,26 @@ str(validate_transformed)
 
 library(caTools)
 sample = sample.split(train_transformed,SplitRatio = 0.75) 
-train2 =subset(train_transformed,sample ==TRUE) 
-test2=subset(train_transformed, sample==FALSE)
+train3 =subset(train_transformed,sample ==TRUE) 
+test3=subset(train_transformed, sample==FALSE)
 
 
-prop.table(table(train2$Affected))
+prop.table(table(train3$Affected))
 
 # new to run
+library(fastAdaboost)
+ada_ctrl <- trainControl(method = "repeatedcv",
+                          number = 10,
+                          repeats = 5,
+                          summaryFunction = twoClassSummary,
+                          classProbs = TRUE)
 
-tbag_ctrl <- trainControl(method = "repeatedcv",
-                     number = 10,
-                     repeats = 5,
-                     summaryFunction = twoClassSummary,
-                     classProbs = TRUE)
-
-tbag_orig_fit <- caret::train(make.names(Affected) ~ .,
-                         data = train2,
-                         method = "treebag",
-                         verbose = FALSE,
-                         metric = "ROC",
-                         trControl = tbag_ctrl)
+ada_orig_fit <- caret::train(make.names(Affected) ~ .,
+                              data = train3,
+                              method = "adaboost",
+                              verbose = FALSE,
+                              metric = "ROC",
+                              trControl = ada_ctrl)
 
 tbag_test_roc <- function(model, data) {
   
@@ -214,52 +214,52 @@ tbag_orig_fit %>%
 
 
 tbag_model_weights <- ifelse(train2$Affected == 1,
-                        (1/table(train2$Affected)[1]) * 0.5,
-                        (1/table(train2$Affected)[2]) * 0.5)
+                             (1/table(train2$Affected)[1]) * 0.5,
+                             (1/table(train2$Affected)[2]) * 0.5)
 
 tbag_ctrl$seeds <- tbag_orig_fit$control$seeds
 
 tbag_weighted_fit <- train(make.names(Affected) ~ .,
-                      data = train2,
-                      method = "treebag",
-                      verbose = FALSE,
-                      weights = tbag_model_weights,
-                      metric = "ROC",
-                      trControl = tbag_ctrl)
+                           data = train2,
+                           method = "treebag",
+                           verbose = FALSE,
+                           weights = tbag_model_weights,
+                           metric = "ROC",
+                           trControl = tbag_ctrl)
 
 tbag_ctrl$sampling <- "down"
 
 tbag_down_fit <- train(make.names(Affected) ~ .,
-                  data = train2,
-                  method = "treebag",
-                  verbose = FALSE,
-                  metric = "ROC",
-                  trControl = tbag_ctrl)
+                       data = train2,
+                       method = "treebag",
+                       verbose = FALSE,
+                       metric = "ROC",
+                       trControl = tbag_ctrl)
 
 tbag_ctrl$sampling <- "up"
 
 tbag_up_fit <- train(make.names(Affected) ~ .,
-                data = train2,
-                method = "treebag",
-                verbose = FALSE,
-                metric = "ROC",
-                trControl = tbag_ctrl)
+                     data = train2,
+                     method = "treebag",
+                     verbose = FALSE,
+                     metric = "ROC",
+                     trControl = tbag_ctrl)
 
 tbag_ctrl$sampling <- "smote"
 
 tbag_smote_fit <- train(make.names(Affected) ~ .,
-                   data = train2,
-                   method = "treebag",
-                   verbose = FALSE,
-                   metric = "ROC",
-                   trControl = tbag_ctrl)
+                        data = train2,
+                        method = "treebag",
+                        verbose = FALSE,
+                        metric = "ROC",
+                        trControl = tbag_ctrl)
 
 
 tbag_model_list <- list(original = tbag_orig_fit,
-                   weighted = tbag_weighted_fit,
-                   down = tbag_down_fit,
-                   up = tbag_up_fit,
-                   SMOTE = tbag_smote_fit)
+                        weighted = tbag_weighted_fit,
+                        down = tbag_down_fit,
+                        up = tbag_up_fit,
+                        SMOTE = tbag_smote_fit)
 
 library(purrr)
 library(pROC)

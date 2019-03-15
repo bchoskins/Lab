@@ -1,4 +1,4 @@
-# Normalize Training Data Tree Bag
+# Normalize Training Data Random Forest
 
 data = read.delim2('goodData.csv', header = TRUE, sep = ",", dec = ",", stringsAsFactor = FALSE)
 data = data[c(-1)]
@@ -179,28 +179,26 @@ str(validate_transformed)
 
 library(caTools)
 sample = sample.split(train_transformed,SplitRatio = 0.75) 
-train2 =subset(train_transformed,sample ==TRUE) 
-test2=subset(train_transformed, sample==FALSE)
+train1 =subset(train_transformed,sample ==TRUE) 
+test1=subset(train_transformed, sample==FALSE)
 
 
-prop.table(table(train2$Affected))
+prop.table(table(train1$Affected))
 
-# new to run
-
-tbag_ctrl <- trainControl(method = "repeatedcv",
+ctrl <- trainControl(method = "repeatedcv",
                      number = 10,
                      repeats = 5,
                      summaryFunction = twoClassSummary,
                      classProbs = TRUE)
 
-tbag_orig_fit <- caret::train(make.names(Affected) ~ .,
-                         data = train2,
-                         method = "treebag",
-                         verbose = FALSE,
-                         metric = "ROC",
-                         trControl = tbag_ctrl)
+orig_fit <- caret::train(make.names(Affected) ~ .,
+                  data = train1,
+                  method = "rf",
+                  verbose = FALSE,
+                  metric = "ROC",
+                  trControl = ctrl)
 
-tbag_test_roc <- function(model, data) {
+test_roc <- function(model, data) {
   
   roc(data$Affected,
       predict(model, data, type = "prob")[, "X2"])
@@ -208,90 +206,181 @@ tbag_test_roc <- function(model, data) {
 }
 
 library(pROC)
-tbag_orig_fit %>%
-  test_roc(data = test2) %>%
+orig_fit %>%
+  test_roc(data = test1) %>%
   auc()
 
 
-tbag_model_weights <- ifelse(train2$Affected == 1,
-                        (1/table(train2$Affected)[1]) * 0.5,
-                        (1/table(train2$Affected)[2]) * 0.5)
+model_weights <- ifelse(train1$Affected == 1,
+                        (1/table(train1$Affected)[1]) * 0.5,
+                        (1/table(train1$Affected)[2]) * 0.5)
 
-tbag_ctrl$seeds <- tbag_orig_fit$control$seeds
+ctrl$seeds <- orig_fit$control$seeds
 
-tbag_weighted_fit <- train(make.names(Affected) ~ .,
-                      data = train2,
-                      method = "treebag",
+weighted_fit <- caret::train(make.names(Affected) ~ .,
+                      data = train1,
+                      method = "rf",
                       verbose = FALSE,
-                      weights = tbag_model_weights,
+                      weights = model_weights,
                       metric = "ROC",
-                      trControl = tbag_ctrl)
+                      trControl = ctrl)
 
-tbag_ctrl$sampling <- "down"
+ctrl$sampling <- "down"
 
-tbag_down_fit <- train(make.names(Affected) ~ .,
-                  data = train2,
-                  method = "treebag",
+down_fit <- caret::train(make.names(Affected) ~ .,
+                  data = train1,
+                  method = "rf",
                   verbose = FALSE,
                   metric = "ROC",
-                  trControl = tbag_ctrl)
+                  trControl = ctrl)
 
-tbag_ctrl$sampling <- "up"
+ctrl$sampling <- "up"
 
-tbag_up_fit <- train(make.names(Affected) ~ .,
-                data = train2,
-                method = "treebag",
+up_fit <- caret::train(make.names(Affected) ~ .,
+                data = train1,
+                method = "rf",
                 verbose = FALSE,
                 metric = "ROC",
-                trControl = tbag_ctrl)
+                trControl = ctrl)
 
-tbag_ctrl$sampling <- "smote"
+ctrl$sampling <- "smote"
 
-tbag_smote_fit <- train(make.names(Affected) ~ .,
-                   data = train2,
-                   method = "treebag",
+smote_fit <- caret::train(make.names(Affected) ~ .,
+                   data = train1,
+                   method = "rf",
                    verbose = FALSE,
                    metric = "ROC",
-                   trControl = tbag_ctrl)
+                   trControl = ctrl)
 
 
-tbag_model_list <- list(original = tbag_orig_fit,
-                   weighted = tbag_weighted_fit,
-                   down = tbag_down_fit,
-                   up = tbag_up_fit,
-                   SMOTE = tbag_smote_fit)
+model_list <- list(original = orig_fit,
+                   weighted = weighted_fit,
+                   down = down_fit,
+                   up = up_fit,
+                   SMOTE = smote_fit)
 
 library(purrr)
 library(pROC)
-tbag_model_list_roc <- tbag_model_list %>%
-  map(tbag_test_roc, data = test2)
+model_list_roc <- model_list %>%
+  map(test_roc, data = test1)
 
-tbag_model_list_roc %>%
+library(dplyr)
+model_list_roc %>%
   map(auc)
 
 
-tbag_results_list_roc <- list(NA)
+results_list_roc <- list(NA)
 num_mod <- 1
 
 library(dplyr)
-for(the_roc in tbag_model_list_roc){
+for(the_roc in model_list_roc){
   
-  tbag_results_list_roc[[num_mod]] <- 
-    data_frame(tpr = the_roc$sensitivities,
+  results_list_roc[[num_mod]] <- 
+    tibble(tpr = the_roc$sensitivities,
                fpr = 1 - the_roc$specificities,
-               model = names(tbag_model_list)[num_mod])
+               model = names(model_list)[num_mod])
   
   num_mod <- num_mod + 1
   
 }
 
-tbag_results_df_roc <- bind_rows(tbag_results_list_roc)
+results_df_roc <- bind_rows(results_list_roc)
 
 custom_col <- c("#000000", "#009E73", "#0072B2", "#D55E00", "#CC79A7")
 
 library(ggplot2)
-ggplot(aes(x = fpr,  y = tpr, group = model), data = tbag_results_df_roc) +
+ggplot(aes(x = fpr,  y = tpr, group = model), data = results_df_roc) +
   geom_line(aes(color = model), size = 1) +
   scale_color_manual(values = custom_col) +
   geom_abline(intercept = 0, slope = 1, color = "gray", size = 1) +
   theme_bw(base_size = 18)
+
+library(caret)
+varImp(up_fit)
+
+library(pROC)
+up_fit %>%
+  test_roc(data = test1) %>%
+  auc()
+
+
+# Overall
+# C8.1         100.00
+# C8.C10        88.68
+# C5.DC.C16     73.54
+# Cit           63.29
+# Leu.Phe       56.25
+# Arg           55.81
+# C0.C16        54.93
+# C14.1         53.77
+# C4.C3         53.61
+# Phe           53.32
+# Glu           51.34
+# C.12          50.71
+# C5            49.75
+# Cit.Arg       46.87
+# C0.C18        39.10
+# Tyr           38.70
+# C5.OH         37.65
+# C4.DC         34.20
+# new_index     31.85
+# Asp.Homocit   26.31
+
+# > mean(model_list_roc$up$sensitivities)
+# [1] 0.8782609
+# > mean(model_list_roc$up$specificities)
+# [1] 0.1769231
+
+
+distancelist <- list()
+for (i in model_list_roc$up$sensitivities) {
+  #print(i)
+  for (j in 1-model_list_roc$up$specificities){
+    #print(j)
+    c = sqrt((j-0)^2+(i-1)^2)
+    print(c)
+    print("here")
+    # dist <- paste('distance:',sep='')
+    # tmp <- list(val = c)
+    distancelist <- c(c)
+  }
+}
+
+
+dist <- list()
+for ( i in  1:length(model_list_roc$up$sensitivities)) {
+   c = sqrt(((1-model_list_roc$up$specificities[i])-0)^2 + (model_list_roc$up$sensitivities[i]-1)^2)
+   dist[[paste0("distance", i)]] <- c
+}
+
+print(min(dist))
+
+# > Reduce(min, dist)
+# [1] 0.5521185
+# > which(dist==Reduce(min,dist))
+# distance108 
+# 108 
+
+# > model_list_roc$up$sensitivities[108]
+# [1] 0.7272727
+
+# > model_list_roc$up$specificities[108]
+# [1] 0.519943
+# > 1-model_list_roc$up$specificities[108]
+# [1] 0.480057
+
+# > sum(is.na(data$C8.1))
+# [1] 3
+# > sum(is.na(data$C8.C10))
+# [1] 2
+# > sum(is.na(data$Cit))
+# [1] 2
+# > sum(is.na(data$Leu.Phe))
+# [1] 2
+# > sum(is.na(data$C5.DC.C16))
+# [1] 34909
+# > sum(is.na(data$Arg))
+# [1] 3
+
+
+
