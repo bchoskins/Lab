@@ -42,7 +42,8 @@ for(i in 2:length(labNum$lab_no)) {
 new_data$new_index <- labNum$index
 
 #reorder
-new_data <- new_data[c(1,66,2:65)]
+new_data <- new_data[c(1,67,3:66,2)]
+new_data <- new_data[,-c(41)]
 
 #write data so we don't have to reindex every time (takes way too long)
 write.csv(new_data, file = "indexedTMS.csv")

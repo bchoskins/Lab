@@ -8,7 +8,7 @@ library(dplyr)
 affectedData <- select(filter(data, Affected == 1), c(1:65))
 #ratio for females to males in affected data
 ratioAffected <- sum(affectedData$gender == "F")/sum(affectedData$gender == "M")
-#ratioAffected = 0.4081633
+#ratioAffected = 0.33684210
 
 library(dplyr)
 # gets rid of two unneeded categories for gender
@@ -19,7 +19,7 @@ df <- select(filter(data, gender != "U" & gender != ""), c(1:65))
 nonAffectedData <- select(filter(data, Affected == 0), c(1:65))
 
 #this is adjusting the gender ratio to ensure there is no bias between controls and actual affected ratios
-fixRatio <- df[sample( which(df$gender=='F'), round(0.427273849*length(which(df$gender=='F')))), ]
+fixRatio <- df[sample( which(df$gender=='F'), round(0.35265*length(which(df$gender=='F')))), ]
 
 justmale <- select(filter(df, gender == "M"), c(1:65))
 
@@ -27,7 +27,7 @@ newData <- dplyr::union(justmale, fixRatio)
 
 #check ratio
 sum(newData$gender == "F") / sum(newData$gender == "M")
-# 0.4081158
+#0.336839
 
 fixedData <- dplyr::union(newData, affectedData) %>%
   arrange(., birth_year, new_index)
@@ -53,7 +53,7 @@ while(ks1$p.value < 0.2) {
     # y here is the row number of affected ids in the full dataset
     y1 = which(fixedData$new_index == i) 
     #print(y)
-    temp1 = append(temp1, fixedData[sample((y1-150):(y1+150), 50, replace = FALSE), "new_index"])
+    temp1 = append(temp1, fixedData[sample((y1-100):(y1+100), 50, replace = FALSE), "new_index"])
   }
   temp1 <- sort(temp1)
   control1 <- as.data.frame(temp1)
@@ -83,7 +83,7 @@ while(ks2$p.value < 0.2) {
     # y here is the row number of affected ids in the full dataset
     y2 = which(fixedData$new_index == i) 
     #print(y)
-    temp2 = append(temp2, fixedData[sample((y2-150):(y2+150), 50, replace = FALSE), "new_index"])
+    temp2 = append(temp2, fixedData[sample((y2-100):(y2+100), 50, replace = FALSE), "new_index"])
   }
   temp2 <- sort(temp2)
   control2 <- as.data.frame(temp2)

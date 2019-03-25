@@ -15,7 +15,7 @@ library(dplyr)
 affectedData <- select(filter(data, Affected == 1), c(1:65))
 
 #grab all duplicate data
-duplicate <- data[duplicated(data[1]),]
+duplicate <- data[duplicated(data$new_index),]
 
 #pull out the one duplicate that has an affected
 saved <- select(filter(duplicate, Affected == 1), c(1:65))
@@ -29,11 +29,13 @@ dataFinal <- dplyr::union(saved, final, by = "new_index")
 #reorder
 dataFinal <- arrange(dataFinal, birth_year, new_index)
 
+
 #remove the saved affecteds duplcate
 dataFinal <- dataFinal[-c(83431),]
 
 #check for any duplicates
-nrow(unique(data['new_index']))
+nrow(unique(dataFinal['new_index']))
+
 
 #write data so we don't have to redp every time 
 write.csv(dataFinal, file = "goodData.csv")

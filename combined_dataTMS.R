@@ -1,4 +1,4 @@
-t#Logistic Regression of Affected ~ All Metabolites + sex + birth year + lab_no
+#Logistic Regression of Affected ~ All Metabolites + sex + birth year + lab_no
 
 dataset1 = read.delim2('INMSP2004to2017TMSData.txt', header = TRUE, sep = "|", dec = ",", stringsAsFactor = FALSE)
 # Only want lab_no, tms_analyte, concentration
@@ -27,11 +27,13 @@ m <- merge(new_dataset1, new_dataset2, by = 'lab_no', all = FALSE)
 # Binary variable column
 m$Affected <- 0
 #Affected ids for comparison
-datasetAffected = read.delim2('affected_ids.txt', header = FALSE)
-
+datasetAffected = read.delim2("fullAffecteds.csv", header = TRUE, sep = ",", dec = ",", stringsAsFactor = FALSE)
+datasetAffected <- datasetAffected[,-c(1)]
+datasetAffected <- as.data.frame(datasetAffected)
+colnames(datasetAffected)[colnames(datasetAffected)=="datasetAffected"] <- "id"
 # loops through rows to find affected, 
 # merging binary data based on row index
-for (i in datasetAffected$V1) {
+for (i in datasetAffected$id) {
   z = which(m[,1] == i)
   for (y in z) {
     m[y,78] = 1
