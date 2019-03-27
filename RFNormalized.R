@@ -189,8 +189,8 @@ test1=subset(train_transformed, sample==FALSE)
 prop.table(table(train1$Affected))
 
 ctrl <- trainControl(method = "repeatedcv",
-                     # number = 10,
-                     # repeats = 3,
+                     number = 10,
+                     repeats = 3,
                      search = "random",
                      summaryFunction = twoClassSummary,
                      classProbs = TRUE)
@@ -200,7 +200,8 @@ orig_fit <- caret::train(make.names(Affected) ~ .,
                   method = "rf",
                   verbose = FALSE,
                   metric = "ROC",
-                  trControl = ctrl)
+                  trControl = ctrl,
+                  tuneLength = 30)
 
 test_roc <- function(model, data) {
   
@@ -209,25 +210,25 @@ test_roc <- function(model, data) {
   
 }
 
-# library(pROC)
-# orig_fit %>%
-#   test_roc(data = test1) %>%
-#   auc()
+library(pROC)
+orig_fit %>%
+  test_roc(data = test1) %>%
+  auc()
 
 
-# model_weights <- ifelse(train1$Affected == 1,
-#                         (1/table(train1$Affected)[1]) * 0.5,
-#                         (1/table(train1$Affected)[2]) * 0.5)
-# 
-# ctrl$seeds <- orig_fit$control$seeds
-# 
-# weighted_fit <- caret::train(make.names(Affected) ~ .,
-#                       data = train1,
-#                       method = "rf",
-#                       verbose = FALSE,
-#                       weights = model_weights,
-#                       metric = "ROC",
-#                       trControl = ctrl)
+model_weights <- ifelse(train1$Affected == 1,
+                        (1/table(train1$Affected)[1]) * 0.5,
+                        (1/table(train1$Affected)[2]) * 0.5)
+
+ctrl$seeds <- orig_fit$control$seeds
+
+weighted_fit <- caret::train(make.names(Affected) ~ .,
+                      data = train1,
+                      method = "rf",
+                      verbose = FALSE,
+                      weights = model_weights,
+                      metric = "ROC",
+                      trControl = ctrl)
 
 
 ctrl$sampling <- "down"
@@ -237,7 +238,8 @@ down_fit <- caret::train(make.names(Affected) ~ .,
                   method = "rf",
                   verbose = FALSE,
                   metric = "ROC",
-                  trControl = ctrl)
+                  trControl = ctrl,
+                  tuneLength = 30)
 
 #takes a bit
 ctrl$sampling <- "up"
@@ -247,7 +249,8 @@ up_fit <- caret::train(make.names(Affected) ~ .,
                 method = "rf",
                 verbose = FALSE,
                 metric = "ROC",
-                trControl = ctrl)
+                trControl = ctrl,
+                tuneLength = 30)
 
 ctrl$sampling <- "smote"
 
@@ -256,7 +259,8 @@ smote_fit <- caret::train(make.names(Affected) ~ .,
                    method = "rf",
                    verbose = FALSE,
                    metric = "ROC",
-                   trControl = ctrl)
+                   trControl = ctrl,
+                   tuneLength = 30)
 
 
 model_list <- list(orig = orig_fit,
@@ -283,6 +287,20 @@ model_list_roc %>%
 # 
 # $SMOTE
 # Area under the curve: 0.5625
+
+
+#With 15 sampled per affect 
+# $orig
+# Area under the curve: 0.5201
+# 
+# $down
+# Area under the curve: 0.5013
+# 
+# $up
+# Area under the curve: 0.469
+# 
+# $SMOTE
+# Area under the curve: 0.5272
 
 results_list_roc <- list(NA)
 num_mod <- 1

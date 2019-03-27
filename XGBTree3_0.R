@@ -208,11 +208,11 @@ getDoParWorkers()
 # does this time double per round????
 xgb.grid <- expand.grid(nrounds = 1, 
                         eta = c(0.01, 0.1), 
-                        max_depth = c(6))
-                        # min_child_weight = c(1),
-                        # gamma = c(0),
-                        # subsample = c(1),
-                        # colsample_bytree = c(1))
+                        max_depth = c(6),
+                        min_child_weight = c(1),
+                        gamma = c(0),
+                        subsample = c(1),
+                        colsample_bytree = c(1))
 
 xgb.tune <-train(x=trainX,y=make.names(trainData$Affected),
                  method="xgbTree",
