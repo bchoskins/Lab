@@ -53,7 +53,7 @@ while(ks1$p.value < 0.2) {
     # y here is the row number of affected ids in the full dataset
     y1 = which(fixedData$new_index == i) 
     #print(y)
-    temp1 = append(temp1, fixedData[sample((y1-100):(y1+100), 50, replace = FALSE), "new_index"])
+    temp1 = append(temp1, fixedData[sample((y1-150):(y1+150), 50, replace = FALSE), "new_index"])
   }
   temp1 <- sort(temp1)
   control1 <- as.data.frame(temp1)
@@ -83,7 +83,7 @@ while(ks2$p.value < 0.2) {
     # y here is the row number of affected ids in the full dataset
     y2 = which(fixedData$new_index == i) 
     #print(y)
-    temp2 = append(temp2, fixedData[sample((y2-100):(y2+100), 50, replace = FALSE), "new_index"])
+    temp2 = append(temp2, fixedData[sample((y2-150):(y2+150), 50, replace = FALSE), "new_index"])
   }
   temp2 <- sort(temp2)
   control2 <- as.data.frame(temp2)
@@ -146,6 +146,7 @@ library(caret)
 preProcValues <- preProcess(trainData, method = c("knnImpute","center","scale"))
 preProcValues2 <- preProcess(validateData, method = c("knnImpute","center","scale"))
 
+#This area is where the scaling occurs
 
 library('RANN')
 train_processed <- predict(preProcValues, trainData)
@@ -175,7 +176,9 @@ validate_transformed$Affected <-as.factor(validate_transformed$Affected)
 str(validate_transformed)
 
 
-##### Now testing normalizing
+##### Now testing random forest
+
+## Mayne feature selection would make a difference????
 
 library(caTools)
 sample = sample.split(train_transformed,SplitRatio = 0.75) 
@@ -186,8 +189,9 @@ test1=subset(train_transformed, sample==FALSE)
 prop.table(table(train1$Affected))
 
 ctrl <- trainControl(method = "repeatedcv",
-                     number = 10,
-                     repeats = 5,
+                     # number = 10,
+                     # repeats = 3,
+                     search = "random",
                      summaryFunction = twoClassSummary,
                      classProbs = TRUE)
 
@@ -205,25 +209,26 @@ test_roc <- function(model, data) {
   
 }
 
-library(pROC)
-orig_fit %>%
-  test_roc(data = test1) %>%
-  auc()
+# library(pROC)
+# orig_fit %>%
+#   test_roc(data = test1) %>%
+#   auc()
 
 
-model_weights <- ifelse(train1$Affected == 1,
-                        (1/table(train1$Affected)[1]) * 0.5,
-                        (1/table(train1$Affected)[2]) * 0.5)
+# model_weights <- ifelse(train1$Affected == 1,
+#                         (1/table(train1$Affected)[1]) * 0.5,
+#                         (1/table(train1$Affected)[2]) * 0.5)
+# 
+# ctrl$seeds <- orig_fit$control$seeds
+# 
+# weighted_fit <- caret::train(make.names(Affected) ~ .,
+#                       data = train1,
+#                       method = "rf",
+#                       verbose = FALSE,
+#                       weights = model_weights,
+#                       metric = "ROC",
+#                       trControl = ctrl)
 
-ctrl$seeds <- orig_fit$control$seeds
-
-weighted_fit <- caret::train(make.names(Affected) ~ .,
-                      data = train1,
-                      method = "rf",
-                      verbose = FALSE,
-                      weights = model_weights,
-                      metric = "ROC",
-                      trControl = ctrl)
 
 ctrl$sampling <- "down"
 
@@ -234,6 +239,7 @@ down_fit <- caret::train(make.names(Affected) ~ .,
                   metric = "ROC",
                   trControl = ctrl)
 
+#takes a bit
 ctrl$sampling <- "up"
 
 up_fit <- caret::train(make.names(Affected) ~ .,
@@ -253,8 +259,7 @@ smote_fit <- caret::train(make.names(Affected) ~ .,
                    trControl = ctrl)
 
 
-model_list <- list(original = orig_fit,
-                   weighted = weighted_fit,
+model_list <- list(orig = orig_fit,
                    down = down_fit,
                    up = up_fit,
                    SMOTE = smote_fit)
@@ -268,6 +273,16 @@ library(dplyr)
 model_list_roc %>%
   map(auc)
 
+# $orig
+# Area under the curve: 0.6044
+# $down
+# Area under the curve: 0.5419
+# 
+# $up
+# Area under the curve: 0.543
+# 
+# $SMOTE
+# Area under the curve: 0.5625
 
 results_list_roc <- list(NA)
 num_mod <- 1
@@ -286,7 +301,7 @@ for(the_roc in model_list_roc){
 
 results_df_roc <- bind_rows(results_list_roc)
 
-custom_col <- c("#000000", "#009E73", "#0072B2", "#D55E00", "#CC79A7")
+custom_col <- c("#00777C", "#0072B2", "#D55E00", "#CC79A7")
 
 library(ggplot2)
 ggplot(aes(x = fpr,  y = tpr, group = model), data = results_df_roc) +
@@ -296,13 +311,16 @@ ggplot(aes(x = fpr,  y = tpr, group = model), data = results_df_roc) +
   theme_bw(base_size = 18)
 
 library(caret)
-varImp(up_fit)
+varImp(orig_fit)
 
 library(pROC)
-up_fit %>%
+orig_fit %>%
   test_roc(data = test1) %>%
   auc()
 
+#New Data 
+# Area under the curve: 0.5625 SMOTE
+# Area under the curve: 0.6044 ORIG
 
 # Overall
 # C8.1         100.00
@@ -331,30 +349,74 @@ up_fit %>%
 # > mean(model_list_roc$up$specificities)
 # [1] 0.1769231
 
+#NEW SMOTE
+# mean(model_list_roc$SMOTE$sensitivities
+#      + )
+# [1] 0.5081049
+# > mean(model_list_roc$SMOTE$specificities)
+# [1] 0.5336538
 
-distancelist <- list()
-for (i in model_list_roc$up$sensitivities) {
-  #print(i)
-  for (j in 1-model_list_roc$up$specificities){
-    #print(j)
-    c = sqrt((j-0)^2+(i-1)^2)
-    print(c)
-    print("here")
-    # dist <- paste('distance:',sep='')
-    # tmp <- list(val = c)
-    distancelist <- c(c)
-  }
-}
+#NEW ORIG
+# > mean(model_list_roc$orig$sensitivities)
+# [1] 0.901308
+# > mean(model_list_roc$orig$specificities)
+# [1] 0.1649572
+
+# distancelist <- list()
+# for (i in model_list_roc$up$sensitivities) {
+#   #print(i)
+#   for (j in 1-model_list_roc$up$specificities){
+#     #print(j)
+#     c = sqrt((j-0)^2+(i-1)^2)
+#     print(c)
+#     print("here")
+#     # dist <- paste('distance:',sep='')
+#     # tmp <- list(val = c)
+#     distancelist <- c(c)
+#   }
+# }
 
 
 dist <- list()
-for ( i in  1:length(model_list_roc$up$sensitivities)) {
-   c = sqrt(((1-model_list_roc$up$specificities[i])-0)^2 + (model_list_roc$up$sensitivities[i]-1)^2)
+for ( i in  1:length(model_list_roc$orig$sensitivities)) {
+   c = sqrt(((1-model_list_roc$orig$specificities[i])-0)^2 + (model_list_roc$orig$sensitivities[i]-1)^2)
    dist[[paste0("distance", i)]] <- c
 }
 
 print(min(dist))
 
+
+#NEW ORIG
+# > Reduce(min, dist)
+# [1] 0.599197
+
+# > which(dist==Reduce(min,dist))
+# distance110 
+# 110 
+
+# model_list_roc$orig$sensitivities[110]
+# [1] 0.5172414
+
+# model_list_roc$orig$specificities[110]
+# [1] 0.6450617
+
+##NEW SMOTE
+# > Reduce(min, dist)
+# [1] 0.5916232
+
+# which(dist==Reduce(min,dist))
+# distance118 
+# 118 
+# 
+# model_list_roc$SMOTE$sensitivities[118]
+# [1] 0.5862069
+# 
+# model_list_roc$SMOTE$specificities[118]
+# [1] 0.5771605
+
+
+
+##OLD UP
 # > Reduce(min, dist)
 # [1] 0.5521185
 # > which(dist==Reduce(min,dist))
@@ -366,8 +428,6 @@ print(min(dist))
 
 # > model_list_roc$up$specificities[108]
 # [1] 0.519943
-# > 1-model_list_roc$up$specificities[108]
-# [1] 0.480057
 
 # > sum(is.na(data$C8.1))
 # [1] 3

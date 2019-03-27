@@ -1,4 +1,4 @@
-# Normalize Training Data Tree Bag
+# XGBTree 3.0
 
 data = read.delim2('goodData.csv', header = TRUE, sep = ",", dec = ",", stringsAsFactor = FALSE)
 data = data[c(-1)]
@@ -8,7 +8,7 @@ library(dplyr)
 affectedData <- select(filter(data, Affected == 1), c(1:65))
 #ratio for females to males in affected data
 ratioAffected <- sum(affectedData$gender == "F")/sum(affectedData$gender == "M")
-#ratioAffected = 0.4081633
+#ratioAffected = 0.33684210
 
 library(dplyr)
 # gets rid of two unneeded categories for gender
@@ -19,7 +19,7 @@ df <- select(filter(data, gender != "U" & gender != ""), c(1:65))
 nonAffectedData <- select(filter(data, Affected == 0), c(1:65))
 
 #this is adjusting the gender ratio to ensure there is no bias between controls and actual affected ratios
-fixRatio <- df[sample( which(df$gender=='F'), round(0.427273849*length(which(df$gender=='F')))), ]
+fixRatio <- df[sample( which(df$gender=='F'), round(0.35265*length(which(df$gender=='F')))), ]
 
 justmale <- select(filter(df, gender == "M"), c(1:65))
 
@@ -27,7 +27,7 @@ newData <- dplyr::union(justmale, fixRatio)
 
 #check ratio
 sum(newData$gender == "F") / sum(newData$gender == "M")
-# 0.4081158
+#0.336839
 
 fixedData <- dplyr::union(newData, affectedData) %>%
   arrange(., birth_year, new_index)
@@ -135,17 +135,18 @@ trainData <- arrange(trainData, birth_year, new_index)
 #***GOOD TO HERE***
 #******************
 
-#### Maybe work here on normalizing
-
 
 sum(is.na(trainData))
 sum(is.na(validateData))
+
+# https://www.analyticsvidhya.com/blog/2016/12/practical-guide-to-implement-machine-learning-with-caret-package-in-r-with-practice-problem/
 
 library(caret)
 #Imputing missing values using KNN.Also centering and scaling numerical columns
 preProcValues <- preProcess(trainData, method = c("knnImpute","center","scale"))
 preProcValues2 <- preProcess(validateData, method = c("knnImpute","center","scale"))
 
+#This area is where the scaling occurs ^^^
 
 library('RANN')
 train_processed <- predict(preProcValues, trainData)
@@ -175,148 +176,177 @@ validate_transformed$Affected <-as.factor(validate_transformed$Affected)
 str(validate_transformed)
 
 
-##### Now testing normalizing
+####### Work Here ################
+library(caret)
+library(corrplot)			# plot correlations
+library(doParallel)		# parallel processing
+library(dplyr)        # Used by caret
+library(gbm)				  # GBM Models
+library(pROC)				  # plot the ROC curve
+library(xgboost)      # Extreme Gradient Boosting
 
-library(caTools)
-sample = sample.split(train_transformed,SplitRatio = 0.75) 
-train2 =subset(train_transformed,sample ==TRUE) 
-test2=subset(train_transformed, sample==FALSE)
+trainIndex <- createDataPartition(train_transformed$Affected,p=.7,list=FALSE)
+trainData <- train_transformed[trainIndex,]
+testData  <- train_transformed[-trainIndex,]
+#
+trainX <-trainData[,-4]        # Pull out the dependent variable
+testX <- testData[,-4]
+sapply(trainX,summary) 
 
+ctrl <- trainControl(method = "repeatedcv",   # 10fold cross validation
+                     number = 5,							# do 5 repititions of cv
+                     summaryFunction=twoClassSummary,	# Use AUC to pick the best model
+                     classProbs=TRUE,
+                     allowParallel = TRUE)
 
-prop.table(table(train2$Affected))
+registerDoParallel(4,cores=4)
+getDoParWorkers()
 
-# new to run
+#all defaults right now
+#low nrounds just to test
+# 1 round takes : 
+# does this time double per round????
+xgb.grid <- expand.grid(nrounds = 1, 
+                        eta = c(0.01, 0.1), 
+                        max_depth = c(6))
+                        # min_child_weight = c(1),
+                        # gamma = c(0),
+                        # subsample = c(1),
+                        # colsample_bytree = c(1))
 
-tbag_ctrl <- trainControl(method = "repeatedcv",
-                     number = 10,
-                     repeats = 5,
-                     summaryFunction = twoClassSummary,
-                     classProbs = TRUE)
+xgb.tune <-train(x=trainX,y=make.names(trainData$Affected),
+                 method="xgbTree",
+                 metric="ROC",
+                 trControl=ctrl,
+                 tuneGrid=xgb.grid)
 
-tbag_orig_fit <- caret::train(make.names(Affected) ~ .,
-                         data = train2,
-                         method = "treebag",
-                         verbose = FALSE,
-                         metric = "ROC",
-                         trControl = tbag_ctrl)
+#Need to run
 
-tbag_test_roc <- function(model, data) {
-  
-  roc(data$Affected,
-      predict(model, data, type = "prob")[, "X2"])
-  
-}
+xgb.tune$bestTune
+plot(xgb.tune)  		# Plot the performance of the training models
+res <- xgb.tune$results
+res
 
-library(pROC)
-tbag_orig_fit %>%
-  test_roc(data = test2) %>%
-  auc()
+### xgboostModel Predictions and Performance
+# Make predictions using the test data set
+xgb.pred <- predict(xgb.tune,testX)
 
+#Look at the confusion matrix  
+confusionMatrix(xgb.pred,testData$Affected)   
 
-tbag_model_weights <- ifelse(train2$Affected == 1,
-                        (1/table(train2$Affected)[1]) * 0.5,
-                        (1/table(train2$Affected)[2]) * 0.5)
+#Draw the ROC curve 
+xgb.probs <- predict(xgb.tune,testX,type="prob")
+#head(xgb.probs)
 
-tbag_ctrl$seeds <- tbag_orig_fit$control$seeds
+xgb.ROC <- roc(predictor=xgb.probs$PS,  #May be like X1
+               response=testData$Affected,
+               levels=rev(levels(testData$Affected)))
+xgb.ROC$auc
+# Area under the curve: 0.8857
 
-tbag_weighted_fit <- train(make.names(Affected) ~ .,
-                      data = train2,
-                      method = "treebag",
-                      verbose = FALSE,
-                      weights = tbag_model_weights,
-                      metric = "ROC",
-                      trControl = tbag_ctrl)
-
-tbag_ctrl$sampling <- "down"
-
-tbag_down_fit <- train(make.names(Affected) ~ .,
-                  data = train2,
-                  method = "treebag",
-                  verbose = FALSE,
-                  metric = "ROC",
-                  trControl = tbag_ctrl)
-
-tbag_ctrl$sampling <- "up"
-
-tbag_up_fit <- train(make.names(Affected) ~ .,
-                data = train2,
-                method = "treebag",
-                verbose = FALSE,
-                metric = "ROC",
-                trControl = tbag_ctrl)
-
-tbag_ctrl$sampling <- "smote"
-
-tbag_smote_fit <- train(make.names(Affected) ~ .,
-                   data = train2,
-                   method = "treebag",
-                   verbose = FALSE,
-                   metric = "ROC",
-                   trControl = tbag_ctrl)
+plot(xgb.ROC,main="xgboost ROC")
+# Plot the propability of poor segmentation
+histogram(~xgb.probs$PS|testData$Affected,xlab="Probability of Poor Segmentation") # PS = like X1
 
 
-tbag_model_list <- list(original = tbag_orig_fit,
-                   weighted = tbag_weighted_fit,
-                   down = tbag_down_fit,
-                   up = tbag_up_fit,
-                   SMOTE = tbag_smote_fit)
 
-library(purrr)
-library(pROC)
-tbag_model_list_roc <- tbag_model_list %>%
-  map(tbag_test_roc, data = test2)
+#
 
-tbag_model_list_roc %>%
-  map(auc)
-
-# $original
-# Area under the curve: 0.4972
+# library(readxl)
+# library(tidyverse)
+# library(xgboost)
+# library(caret)
+# # Create index for testing and training data
+# inTrain <- createDataPartition(y = train_transformed$Affected, p = 0.8, list = FALSE)
+# # subset power_plant data to training
+# training <- train_transformed[inTrain,]
+# # subset the rest to test
+# testing <- train_transformed[-inTrain,]
 # 
-# $weighted
-# Area under the curve: 0.4972
 # 
-# $down
-# Area under the curve: 0.5041
+# X_train = xgb.DMatrix(as.matrix(training %>% select(-Affected)))
+# y_train = training$Affected
+# X_test = xgb.DMatrix(as.matrix(testing %>% select(-Affected)))
+# y_test = testing$Affected
 # 
-# $up
-# Area under the curve: 0.5051
+# xgb_trcontrol = trainControl(
+#   method = "cv",
+#   number = 5,  
+#   allowParallel = TRUE,
+#   verboseIter = FALSE,
+#   returnData = FALSE
+# )
 # 
-# $SMOTE
-# Area under the curve: 0.547
+# xgbGrid <- expand.grid(nrounds = c(100,200),  
+#                        max_depth = c(10, 15, 20, 25),
+#                        colsample_bytree = seq(0.5, 0.9, length.out = 5),
+#                        ## The values below are default values in the sklearn-api. 
+#                        eta = 0.1,
+#                        gamma=0,
+#                        min_child_weight = 1,
+#                        subsample = 1
+# )
+# 
+# xgb_model = train(
+#   X_train, y_train,  
+#   trControl = xgb_trcontrol,
+#   tuneGrid = xgbGrid,
+#   method = "xgbTree"
+# )
+# 
+# xgb_model$bestTune
+# 
+# 
+# xgb_model$bestTune
+# plot(xgb_model)
+# 
+# res <- xgb_model$results
+# res
+# 
+# 
+# 
+# xgb.probs <- predict(xgb_model,X_test)
+# head(xgb.probs)
+# 
+# confusionMatrix(xgb.probs,testing$Affected)   
+# 
+# library(pROC)
+# xgb.ROC <- roc(predictor=xgb.probs$`1`,
+#                response=train$Affected,
+#                levels=rev(levels(train$Affected)))
+# 
+# xgb.ROC$auc
+# plot(xgb.ROC,main="xgboost ROC")
 
 
-tbag_results_list_roc <- list(NA)
-num_mod <- 1
-
-library(dplyr)
-for(the_roc in tbag_model_list_roc){
-  
-  tbag_results_list_roc[[num_mod]] <- 
-    data_frame(tpr = the_roc$sensitivities,
-               fpr = 1 - the_roc$specificities,
-               model = names(tbag_model_list)[num_mod])
-  
-  num_mod <- num_mod + 1
-  
-}
-
-tbag_results_df_roc <- bind_rows(tbag_results_list_roc)
-
-custom_col <- c("#000000", "#009E73", "#0072B2", "#D55E00", "#CC79A7")
-
-library(ggplot2)
-ggplot(aes(x = fpr,  y = tpr, group = model), data = tbag_results_df_roc) +
-  geom_line(aes(color = model), size = 1) +
-  scale_color_manual(values = custom_col) +
-  geom_abline(intercept = 0, slope = 1, color = "gray", size = 1) +
-  theme_bw(base_size = 18)
 
 
 
-
-
-
-
+# predicted = predict(xgb_model, X_test)
+# residuals = as.numeric(y_test) - as.numeric(predicted)
+# RMSE = sqrt(mean(residuals^2))
+# cat('The root mean square error of the test data is ', round(RMSE,3),'\n')
+# 
+# y_test_mean = mean(as.numeric(y_test))
+# # Calculate total sum of squares
+# tss =  sum((as.numeric(y_test) - y_test_mean)^2 )
+# # Calculate residual sum of squares
+# rss =  sum(residuals^2)
+# # Calculate R-squared
+# rsq  =  1 - (rss/tss)
+# cat('The R-square of the test data is ', round(rsq,3), '\n')
+# 
+# 
+# options(repr.plot.width=8, repr.plot.height=4)
+# my_data = as.data.frame(cbind(predicted = predicted,
+#                               observed = y_test))
+# # Plot predictions vs test data
+# ggplot(my_data,aes(predicted, observed)) + geom_point(color = "darkred", alpha = 0.5) + 
+#   geom_smooth(method=lm)+ ggtitle('Linear Regression ') + ggtitle("Extreme Gradient Boosting: Prediction vs Test Data") +
+#   xlab("Status") + ylab("Affected") + 
+#   theme(plot.title = element_text(color="darkgreen",size=16,hjust = 0.5),
+#         axis.text.y = element_text(size=12), axis.text.x = element_text(size=12,hjust=.5),
+#         axis.title.x = element_text(size=14), axis.title.y = element_text(size=14))
 
 
 
