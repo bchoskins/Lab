@@ -194,7 +194,7 @@ testX <- testData[,-4]
 sapply(trainX,summary) 
 
 ctrl <- trainControl(method = "repeatedcv",   # 10fold cross validation
-                     number = 5,							# do 5 repititions of cv
+                     number = 3,							# do 5 repititions of cv
                      summaryFunction=twoClassSummary,	# Use AUC to pick the best model
                      classProbs=TRUE,
                      allowParallel = TRUE)
@@ -206,13 +206,15 @@ getDoParWorkers()
 #low nrounds just to test
 # 1 round takes : 
 # does this time double per round????
-xgb.grid <- expand.grid(nrounds = 1, 
+xgb.grid <- expand.grid(nrounds = 10, 
                         eta = c(0.01, 0.1), 
                         max_depth = c(6),
                         min_child_weight = c(1),
                         gamma = c(0),
                         subsample = c(1),
                         colsample_bytree = c(1))
+#Try This
+#https://www.h2o.ai/blog/xgboost-in-h2o-machine-learning-platform/ 
 
 xgb.tune <-train(x=trainX,y=make.names(trainData$Affected),
                  method="xgbTree",

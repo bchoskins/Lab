@@ -1,4 +1,4 @@
-# Caret Random Forest Down Sampled 2.0 
+#GBM Normalized
 
 data = read.delim2('goodData.csv', header = TRUE, sep = ",", dec = ",", stringsAsFactor = FALSE)
 data = data[c(-1)]
@@ -8,7 +8,7 @@ library(dplyr)
 affectedData <- select(filter(data, Affected == 1), c(1:65))
 #ratio for females to males in affected data
 ratioAffected <- sum(affectedData$gender == "F")/sum(affectedData$gender == "M")
-#ratioAffected = 0.4081633
+#ratioAffected = 0.33684210
 
 library(dplyr)
 # gets rid of two unneeded categories for gender
@@ -19,7 +19,7 @@ df <- select(filter(data, gender != "U" & gender != ""), c(1:65))
 nonAffectedData <- select(filter(data, Affected == 0), c(1:65))
 
 #this is adjusting the gender ratio to ensure there is no bias between controls and actual affected ratios
-fixRatio <- df[sample( which(df$gender=='F'), round(0.427273849*length(which(df$gender=='F')))), ]
+fixRatio <- df[sample( which(df$gender=='F'), round(0.35265*length(which(df$gender=='F')))), ]
 
 justmale <- select(filter(df, gender == "M"), c(1:65))
 
@@ -27,7 +27,7 @@ newData <- dplyr::union(justmale, fixRatio)
 
 #check ratio
 sum(newData$gender == "F") / sum(newData$gender == "M")
-# 0.4081158
+#0.336839
 
 fixedData <- dplyr::union(newData, affectedData) %>%
   arrange(., birth_year, new_index)
@@ -119,17 +119,6 @@ affectedData$gender = as.factor(affectedData$gender)
 
 affectedData$Affected = as.factor(affectedData$Affected)
 
-
-# ratioed smapling needs to be done here
-# here we adjust the the affecteds in each, do about 60% in validate and 40% in training so that they do not overlap. 
-# require(caTools)
-# set.seed(123)   #  set seed to ensure you always have same random numbers generated
-# sample = sample.split(affectedData,SplitRatio = 0.60) # splits the data in the ratio mentioned in SplitRatio. After splitting marks these rows as logical TRUE and the the remaining are marked as logical FALSE
-# sampleV =subset(affectedData,sample ==TRUE) # creates a training dataset named train1 with rows which are marked as TRUE
-# sampleT=subset(affectedData, sample==FALSE)
-# 
-# check <- dplyr::intersect(sampleT, sampleV)
-
 library(gtools)
 # need to add affected data with NAs back in to impute w/ group 1
 validateData <- smartbind(group1, affectedData)
@@ -142,13 +131,6 @@ trainData <- smartbind(group2, affectedData)
 #sort so that affected data is integrated within the control data
 trainData <- arrange(trainData, birth_year, new_index)
 
-
-#***GOOD TO HERE***
-#******************
-
-#### Maybe work here on normalizing
-
-
 sum(is.na(trainData))
 sum(is.na(validateData))
 
@@ -157,6 +139,7 @@ library(caret)
 preProcValues <- preProcess(trainData, method = c("knnImpute","center","scale"))
 preProcValues2 <- preProcess(validateData, method = c("knnImpute","center","scale"))
 
+#This area is where the scaling occurs
 
 library('RANN')
 train_processed <- predict(preProcValues, trainData)
@@ -186,53 +169,185 @@ validate_transformed$Affected <-as.factor(validate_transformed$Affected)
 str(validate_transformed)
 
 
-##### Now testing down sampling 
+##### Now testing normalizing
 
 library(caTools)
 sample = sample.split(train_transformed,SplitRatio = 0.75) 
 train1 =subset(train_transformed,sample ==TRUE) 
 test1=subset(train_transformed, sample==FALSE)
 
-table(train1$Affected)
 
-nmin <- sum(train1$Affected == 2)
+prop.table(table(train1$Affected))
 
-ctrl <- trainControl(method = "cv",
-                      classProbs = TRUE,
-                      summaryFunction = twoClassSummary,
-                      search ="random")
+ctrl <- trainControl(method = "repeatedcv",
+                     number = 10,
+                     repeats = 5,
+                     summaryFunction = twoClassSummary,
+                     classProbs = TRUE)
 
+orig_fit <- train(make.names(Affected) ~ .,
+                  data = train1,
+                  method = "gbm",
+                  verbose = FALSE,
+                  metric = "ROC",
+                  trControl = ctrl)
 
-rfDownsampled <- caret::train(make.names(Affected) ~ ., data = train1,
-                        method = "rf",
-                        ntree = 1500,
-                        # tuneLength = 5,
-                        metric = "ROC",
-                        trControl = ctrl,
-                        ## Tell randomForest to sample by strata. Here,
-                        ## that means within each class
-                        strata = train1$Affected,
-                        ## Now specify that the number of samples selected
-                        ## within each class should be the same
-                        sampsize = rep(nmin, 2))
+test_roc <- function(model, data) {
+  
+  roc(data$Affected,
+      predict(model, data, type = "prob")[, "X2"])
+  
+}
 
-downProbs <- predict(rfDownsampled, test1, type = "prob")[,1]
-
-downsampledROC <- roc(response = test1$Affected, 
-                       predictor = downProbs,
-                       levels = rev(levels(test1$Affected)))
-
-plot(downsampledROC, col = rgb(1, 0, 0, .5), lwd = 2)
-
-getTrainPerf(rfDownsampled)
-
-auc(downsampledROC)
+library(pROC)
+orig_fit %>%
+  test_roc(data = test1) %>%
+  auc()
 
 
+model_weights <- ifelse(train1$Affected == 1,
+                        (1/table(train1$Affected)[1]) * 0.5,
+                        (1/table(train1$Affected)[2]) * 0.5)
 
-#### with 0.75 split and ntree = 1500, tune = 5
-#Area under the curve: 0.7104
-# Area under the curve: 0.5716
+ctrl$seeds <- orig_fit$control$seeds
+
+weighted_fit <- train(make.names(Affected) ~ .,
+                      data = train1,
+                      method = "gbm",
+                      verbose = FALSE,
+                      weights = model_weights,
+                      metric = "ROC",
+                      trControl = ctrl)
+
+ctrl$sampling <- "down"
+
+down_fit <- train(make.names(Affected) ~ .,
+                  data = train1,
+                  method = "gbm",
+                  verbose = FALSE,
+                  metric = "ROC",
+                  trControl = ctrl)
+
+ctrl$sampling <- "up"
+
+up_fit <- train(make.names(Affected) ~ .,
+                data = train1,
+                method = "gbm",
+                verbose = FALSE,
+                metric = "ROC",
+                trControl = ctrl)
+
+ctrl$sampling <- "smote"
+
+smote_fit <- train(make.names(Affected) ~ .,
+                   data = train1,
+                   method = "gbm",
+                   verbose = FALSE,
+                   metric = "ROC",
+                   trControl = ctrl)
+
+
+model_list <- list(original = orig_fit,
+                   weighted = weighted_fit,
+                   down = down_fit,
+                   up = up_fit,
+                   SMOTE = smote_fit)
+
+library(purrr)
+library(pROC)
+model_list_roc <- model_list %>%
+  map(test_roc, data = test1)
+
+model_list_roc %>%
+  map(auc)
+
+
+results_list_roc <- list(NA)
+num_mod <- 1
+
+library(dplyr)
+for(the_roc in model_list_roc){
+  
+  results_list_roc[[num_mod]] <- 
+    tibble(tpr = the_roc$sensitivities,
+               fpr = 1 - the_roc$specificities,
+               model = names(model_list)[num_mod])
+  
+  num_mod <- num_mod + 1
+  
+}
+
+results_df_roc <- bind_rows(results_list_roc)
+
+custom_col <- c("#000000", "#009E73", "#0072B2", "#D55E00", "#CC79A7")
+
+library(ggplot2)
+ggplot(aes(x = fpr,  y = tpr, group = model), data = results_df_roc) +
+  geom_line(aes(color = model), size = 1) +
+  scale_color_manual(values = custom_col) +
+  geom_abline(intercept = 0, slope = 1, color = "gray", size = 1) +
+  theme_bw(base_size = 18)
+
+###NEW 
+# $original
+# Area under the curve: 0.5479
+# 
+# $weighted
+# Area under the curve: 0.4805
+# 
+# $down
+# Area under the curve: 0.5249
+# 
+# $up
+# Area under the curve: 0.5185
+# 
+# $SMOTE
+# Area under the curve: 0.5137
+
+
+library(caret)
+varImp(orig_fit)
+
+# > mean(model_list_roc$up$sensitivities)
+
+# > mean(model_list_roc$up$specificities)
+
+dist <- list()
+for ( i in  1:length(model_list_roc$orig$sensitivities)) {
+  c = sqrt(((1-model_list_roc$orig$specificities[i])-0)^2 + (model_list_roc$orig$sensitivities[i]-1)^2)
+  dist[[paste0("distance", i)]] <- c
+}
+
+print(min(dist))
+
+
+###OLD
+# $original
+# Area under the curve: 0.4952
+# 
+# $weighted
+# Area under the curve: 0.5693
+# 
+# $down
+# Area under the curve: 0.5094
+# 
+# $up
+# Area under the curve: 0.558
+# 
+# $SMOTE
+# Area under the curve: 0.5976
+
+
+####Calls for useful data
+
+# > Reduce(min, dist)
+
+# > which(dist==Reduce(min,dist))
+
+# model_list_roc$orig$sensitivities[#]
+
+# model_list_roc$orig$specificities[#]
+
 
 
 
