@@ -1,5 +1,4 @@
-# Caret Random Forest Down Sampled 2.0 
-
+#unbalanced trial
 data = read.delim2('goodData.csv', header = TRUE, sep = ",", dec = ",", stringsAsFactor = FALSE)
 data = data[c(-1)]
 
@@ -110,123 +109,79 @@ same <- dplyr::intersect(group1, group2)
 
 ###GOOD FOR SAMPLING CONTROL GROUPS####
 
-
-# use group1 to impute Affected and group 1 NAs
-# need to first get both datasets to have matching types
 affectedData[,c(5:65)]<- sapply(affectedData[,5:65],as.numeric)
 
 affectedData$gender = as.factor(affectedData$gender)
 
 affectedData$Affected = as.factor(affectedData$Affected)
 
-library(gtools)
-# need to add affected data with NAs back in to impute w/ group 1
-validateData <- smartbind(group1, affectedData)
-#sort so that affected data is integrated within the control data
-validateData <- arrange(validateData, birth_year, new_index)
+
+apply(group2, 2, function(x) length(unique(x)))
+
+#Make gender numeric
+group2$gender = as.numeric(group2$gender)
+affectedData$gender = as.numeric(affectedData$gender)
+
 
 library(gtools) 
 # need to add affected data with NAs back in to impute w/ group 2
-trainData <- smartbind(group2, affectedData)
+combined <- smartbind(group2, affectedData)
 #sort so that affected data is integrated within the control data
-trainData <- arrange(trainData, birth_year, new_index)
+newImpute <- arrange(combined, birth_year, new_index)
 
+library(mice)
+imputed <- mice(newImpute, m=5, maxit = 10, method = "cart", seed = 500)
 
-#***GOOD TO HERE***
-#******************
+completedData <- complete(imputed)
 
-#### Maybe work here on normalizing
+levels(completedData$Affected) <- c("first_class", "second_class")
 
+#remove new_index, gender, birth_year
+train <- completedData[, -c(1,2,3)]
 
-sum(is.na(trainData))
-sum(is.na(validateData))
-
-library(caret)
-#Imputing missing values using KNN.Also centering and scaling numerical columns
-preProcValues <- preProcess(trainData, method = c("knnImpute","center","scale"))
-preProcValues2 <- preProcess(validateData, method = c("knnImpute","center","scale"))
-
-#This area is where the scaling occurs
-
-library('RANN')
-train_processed <- predict(preProcValues, trainData)
-sum(is.na(train_processed))
-str(train_processed)
-
-validate_processed <- predict(preProcValues2, validateData)
-sum(is.na(validate_processed))
-str(validate_processed)
-
-#Converting outcome variable to numeric
-train_processed$Affected = as.numeric(train_processed$Affected)
-validate_processed$Affected = as.numeric(validate_processed$Affected)
-
-#Converting every categorical variable to numerical using dummy variables
-dmy <- dummyVars(" ~ .", data = train_processed,fullRank = T)
-train_transformed <- data.frame(predict(dmy, newdata = train_processed))
-
-dmy2 <- dummyVars(" ~ .", data = validate_processed,fullRank = T)
-validate_transformed <- data.frame(predict(dmy2, newdata = validate_processed))
-
-#Converting the dependent variable back to categorical
-train_transformed$Affected <-as.factor(train_transformed$Affected)
-str(train_transformed)
-
-validate_transformed$Affected <-as.factor(validate_transformed$Affected)
-str(validate_transformed)
-
-##### Now testing down sampling 
+####Online example of imbalanced dealing
 
 library(caTools)
-sample = sample.split(train_transformed,SplitRatio = 0.75) 
-train1 =subset(train_transformed,sample ==TRUE) 
-test1=subset(train_transformed, sample==FALSE)
+split = sample.split(train$Affected, SplitRatio = 0.8)
+training_set = subset(train, split == TRUE)
+test_set = subset(train, split == FALSE)
 
-table(train1$Affected)
+#feature scale
+training_set[-1] = scale(training_set[-1])
+test_set[-1] = scale(test_set[-1])
 
-nmin <- sum(train1$Affected == 2)
+nmin <- sum(training_set$Affected == "second_class")
 
 ctrl <- trainControl(method = "cv",
-                      classProbs = TRUE,
-                      summaryFunction = twoClassSummary,
-                      search ="random")
+                     classProbs = TRUE,
+                     #search = "random")
+                     summaryFunction = twoClassSummary)
+
+ctrl$sampling <- "smote"
+
+smote_fit <- caret::train(Affected ~ .,
+                          data = training_set,
+                          method = "rf",
+                          verbose = FALSE,
+                          metric = "ROC",
+                          trControl = ctrl,
+                          tuneLength = 20)
+
+normal_probability <- predict(smote_fit, test_set, type = "prob")
+threshold <- 0.5
+pred <- factor(ifelse(normal_probability[, "second_class"] > threshold, "second_class", "first_class"))
 
 
-rfDownsampled <- caret::train(make.names(Affected) ~ ., data = train1,
-                        method = "rf",
-                        ntree = 1500,
-                        # tuneLength = 5,
-                        metric = "ROC",
-                        trControl = ctrl,
-                        ## Tell randomForest to sample by strata. Here,
-                        ## that means within each class
-                        strata = train1$Affected,
-                        ## Now specify that the number of samples selected
-                        ## within each class should be the same
-                        sampsize = rep(nmin, 2))
+confusionMatrix(pred, test_set$Affected)
 
-downProbs <- predict(rfDownsampled, test1, type = "prob")[,1]
+pred2 <- ifelse(normal_probability[, "second_class"] > threshold, 1, 0)
+roc_smote <- roc(test_set$Affected, pred2)
+#Area under the curve: 0.429949749
 
-downsampledROC <- roc(response = test1$Affected, 
-                       predictor = downProbs,
-                       levels = rev(levels(test1$Affected)))
-
-plot(downsampledROC, col = rgb(1, 0, 0, .5), lwd = 2)
-
-getTrainPerf(rfDownsampled)
-
-auc(downsampledROC)
-
-###NEW
-# > getTrainPerf(rfDownsampled)
-# TrainROC TrainSens TrainSpec method
-# 1 0.4867098 0.9994565         0     rf
-# > auc(downsampledROC)
-# Area under the curve: 0.5564
-
-#### with 0.75 split and ntree = 1500, tune = 5
-#Area under the curve: 0.7104
-# Area under the curve: 0.5716
-
-
+library(pROC)
+probsTrain <- predict(smote_fit, training_set, type = "prob")
+rocCurve   <- roc(response = training_set$Affected,
+                  predictor = probsTrain[, "second_class"],
+                  levels = rev(levels(training_set$Affected)))
+plot(rocCurve, print.thres = "best")
 

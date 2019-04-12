@@ -16,7 +16,7 @@ affectedSum = sum(affectedData$Affected)
 #Checks a 25% threshold based on total number of NAs in each column
 #new_data <- merge[, colSums(is.na(affectedData)) <= affectedSum*0.75]
 #Checks a 75% threshold based on total number of NAs in each column
-new_data <- merge[, colSums(is.na(affectedData)) <= affectedSum*0.25]
+new_data <- merge[, colSums(is.na(affectedData)) <= affectedSum*0.5]
 
 #sort by birth_year then lab_no
 new_data <- arrange(new_data, birth_year, lab_no)
@@ -42,8 +42,8 @@ for(i in 2:length(labNum$lab_no)) {
 new_data$new_index <- labNum$index
 
 #reorder
-new_data <- new_data[c(1,67,3:66,2)]
-new_data <- new_data[,-c(41)]
+new_data <- new_data[c(1,69,2:68)]
+new_data <- new_data[,-c(1)]
 
 #write data so we don't have to reindex every time (takes way too long)
 write.csv(new_data, file = "indexedTMS.csv")

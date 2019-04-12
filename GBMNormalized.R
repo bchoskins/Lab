@@ -171,26 +171,32 @@ str(validate_transformed)
 
 ##### Now testing normalizing
 
-library(caTools)
-sample = sample.split(train_transformed,SplitRatio = 0.75) 
-train1 =subset(train_transformed,sample ==TRUE) 
-test1=subset(train_transformed, sample==FALSE)
+# library(caTools)
+# sample = sample.split(train_transformed,SplitRatio = 0.75)
+# train1 =subset(train_transformed,sample ==TRUE)
+# test1=subset(train_transformed, sample==FALSE)
 
 
-prop.table(table(train1$Affected))
+#prop.table(table(train1$Affected))
+
+levels(train_transformed$Affected) <- c("first_class", "second_class")
 
 ctrl <- trainControl(method = "repeatedcv",
-                     number = 10,
-                     repeats = 5,
+                     number = 5,
+                     repeats = 2,
                      summaryFunction = twoClassSummary,
                      classProbs = TRUE)
 
-orig_fit <- train(make.names(Affected) ~ .,
-                  data = train1,
+orig_fit <- train(Affected ~ .,
+                  data = train_transformed[,-c(1,2,3)],
                   method = "gbm",
                   verbose = FALSE,
                   metric = "ROC",
                   trControl = ctrl)
+
+rf.roc <- roc(train_transformed$Affected, orig_fit$finalModel$votes[,2])
+
+
 
 test_roc <- function(model, data) {
   

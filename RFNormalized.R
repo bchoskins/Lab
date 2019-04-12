@@ -180,83 +180,124 @@ str(validate_transformed)
 
 ## Mayne feature selection would make a difference????
 
-library(caTools)
-sample = sample.split(train_transformed,SplitRatio = 0.75) 
-train1 =subset(train_transformed,sample ==TRUE) 
-test1=subset(train_transformed, sample==FALSE)
+# library(caTools)
+# sample = sample.split(train_transformed,SplitRatio = 0.8)
+# train1 =subset(train_transformed,sample ==TRUE)
+# test1=subset(train_transformed, sample==FALSE)
 
 
-prop.table(table(train1$Affected))
+# prop.table(table(train1$Affected))
 
-ctrl <- trainControl(method = "repeatedcv",
-                     number = 10,
-                     repeats = 5,
-                     search = "random",
-                     summaryFunction = twoClassSummary,
-                     classProbs = TRUE)
+# ctrl <- trainControl(method = "repeatedcv",
+#                      number = 5,
+#                      repeats = 2,
+#                      search = "random",
+#                      summaryFunction = twoClassSummary,
+#                      classProbs = TRUE)
 
-orig_fit <- caret::train(make.names(Affected) ~ .,
-                  data = train1,
-                  method = "rf",
-                  verbose = FALSE,
-                  metric = "ROC",
-                  trControl = ctrl)
-                  #tuneLength = 30)
+levels(train_transformed$Affected) <- c("first_class", "second_class")
 
-test_roc <- function(model, data) {
-  
-  roc(data$Affected,
-      predict(model, data, type = "prob")[, "X2"])
-  
-}
+nmin <- sum(train_transformed$Affected == "second_class")
 
-library(pROC)
-orig_fit %>%
-  test_roc(data = test1) %>%
-  auc()
+ctrl <- trainControl(method = "cv",
+                     classProbs = TRUE,
+                     #search = "random")
+                     summaryFunction = twoClassSummary)
+apply(trainData, 2, function(x) length(unique(x)))
+apply(train_transformed, 2, function(x) length(unique(x)))
+#technically down sampling now
+orig_fit <- train(Affected ~., data=train_transformed[,-c(1,2,3)],
+                  method="rf",
+                  ntree=1500,
+                  tuneLength=10,
+                  metric="ROC",
+                  trControl=ctrl,
+                  strata=train_transformed$Affected,
+                  sampsize=rep(nmin,2))
 
+rf.roc <- roc(train_transformed$Affected, orig_fit$finalModel$votes[,2])
+#Area under the curve: 0.5288 n = 2500, tlength 10
+#Area under the curve: 0.5349 n = 2500, tlength 20
+#Area under the curve: 0.5366 n = 2500, tlength 30
+#Area under the curve: 0.5306 n = 2000, tlength = 30
+
+# name = paste("/wdata/rotating_students/bhoskins/Lab_BH/rfModel")
+# save(orig_fit, file = name)
+
+
+# test_roc <- function(model, data) {
+#   
+#   roc(data$Affected,
+#       orig_fit$finalModel$votes[, "X2"])
+#   
+# }
+# 
+# library(pROC)
+# orig_fit %>%
+#   test_roc(data = train_transformed) %>%
+#   auc()
+
+#at .75
 #Area under the curve: 0.6039
+#at .8
+#Area under the curve: 0.5587
 
-model_weights <- ifelse(train1$Affected == 1,
-                        (1/table(train1$Affected)[1]) * 0.5,
-                        (1/table(train1$Affected)[2]) * 0.5)
+# model_weights <- ifelse(train_transformed$Affected == 1,
+#                         (1/table(train_transformed$Affected)[1]) * 0.5,
+#                         (1/table(train_transformed$Affected)[2]) * 0.5)
+# 
+# ctrl$seeds <- orig_fit$control$seeds
+# 
+# weighted_fit <- caret::train(make.names(Affected) ~ .,
+#                       data = train_transformed,
+#                       method = "rf",
+#                       verbose = FALSE,
+#                       weights = model_weights,
+#                       metric = "ROC",
+#                       trControl = ctrl,
+#                       tuneLength = 10)
 
-ctrl$seeds <- orig_fit$control$seeds
-
-weighted_fit <- caret::train(make.names(Affected) ~ .,
-                      data = train1,
-                      method = "rf",
-                      verbose = FALSE,
-                      weights = model_weights,
-                      metric = "ROC",
-                      trControl = ctrl)
+#rfWeighted.roc <- roc(train_transformed$Affected, weighted_fit$finalModel$votes[,"X2"])
+#Area under the curve: 0.5256 
 
 
-ctrl$sampling <- "down"
+ctrl$sampling <- orig_fit$control$"down"
 
 down_fit <- caret::train(make.names(Affected) ~ .,
-                  data = train1,
+                  data = train_transformed,
                   method = "rf",
                   verbose = FALSE,
                   metric = "ROC",
-                  trControl = ctrl)
-                  #tuneLength = 30)
+                  trControl = ctrl, 
+                  tuneLength = 20)
+
+rfDown.roc <- roc(train_transformed$Affected, down_fit$finalModel$votes[,"X2"])
 
 #takes a bit
 ctrl$sampling <- "up"
 
+up_fit <- caret::train(make.names(Affected) ~ .,
+                         data = train_transformed,
+                         method = "rf",
+                         verbose = FALSE,
+                         metric = "ROC",
+                         trControl = ctrl,
+                         tuneLength = 20)
+
+rfUp.roc <- roc(train_transformed$Affected, up_fit$finalModel$votes[,2])
        
 ctrl$sampling <- "smote"
-
+ 
 smote_fit <- caret::train(make.names(Affected) ~ .,
-                   data = train1,
+                   data = train_transformed,
                    method = "rf",
                    verbose = FALSE,
                    metric = "ROC",
-                   trControl = ctrl)
-                   #tuneLength = 30)
+                   trControl = ctrl,
+                   tuneLength = 10)
 
-
+rfSmote.roc <- roc(train_transformed$Affected, smote_fit$finalModel$votes[,"X2"])
+#
 model_list <- list(orig = orig_fit,
                    down = down_fit,
                    up = up_fit,
@@ -265,11 +306,26 @@ model_list <- list(orig = orig_fit,
 library(purrr)
 library(pROC)
 model_list_roc <- model_list %>%
-  map(test_roc, data = test1)
+  map(test_roc, data = train_transformed)
 
 library(dplyr)
 model_list_roc %>%
   map(auc)
+
+#WIth 0.8
+# $orig
+# Area under the curve: 0.5587
+# 
+# $down
+# Area under the curve: 0.5585
+# 
+# $up
+# Area under the curve: 0.557
+# 
+# $SMOTE
+# Area under the curve: 0.5141
+
+
 
 # $orig
 # Area under the curve: 0.6044
@@ -327,7 +383,7 @@ varImp(orig_fit)
 
 library(pROC)
 orig_fit %>%
-  test_roc(data = test1) %>%
+  test_roc(data = train_transformed) %>%
   auc()
 
 #New Data 

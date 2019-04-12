@@ -1,4 +1,4 @@
-# Normalize Training Data Tree Bag
+# SVM Normalized
 
 data = read.delim2('goodData.csv', header = TRUE, sep = ",", dec = ",", stringsAsFactor = FALSE)
 data = data[c(-1)]
@@ -8,7 +8,7 @@ library(dplyr)
 affectedData <- select(filter(data, Affected == 1), c(1:65))
 #ratio for females to males in affected data
 ratioAffected <- sum(affectedData$gender == "F")/sum(affectedData$gender == "M")
-#ratioAffected = 0.4081633
+#ratioAffected = 0.33684210
 
 library(dplyr)
 # gets rid of two unneeded categories for gender
@@ -19,7 +19,7 @@ df <- select(filter(data, gender != "U" & gender != ""), c(1:65))
 nonAffectedData <- select(filter(data, Affected == 0), c(1:65))
 
 #this is adjusting the gender ratio to ensure there is no bias between controls and actual affected ratios
-fixRatio <- df[sample( which(df$gender=='F'), round(0.427273849*length(which(df$gender=='F')))), ]
+fixRatio <- df[sample( which(df$gender=='F'), round(0.35265*length(which(df$gender=='F')))), ]
 
 justmale <- select(filter(df, gender == "M"), c(1:65))
 
@@ -27,7 +27,7 @@ newData <- dplyr::union(justmale, fixRatio)
 
 #check ratio
 sum(newData$gender == "F") / sum(newData$gender == "M")
-# 0.4081158
+#0.336839
 
 fixedData <- dplyr::union(newData, affectedData) %>%
   arrange(., birth_year, new_index)
@@ -146,6 +146,7 @@ library(caret)
 preProcValues <- preProcess(trainData, method = c("knnImpute","center","scale"))
 preProcValues2 <- preProcess(validateData, method = c("knnImpute","center","scale"))
 
+#This area is where the scaling occurs
 
 library('RANN')
 train_processed <- predict(preProcValues, trainData)
@@ -175,34 +176,30 @@ validate_transformed$Affected <-as.factor(validate_transformed$Affected)
 str(validate_transformed)
 
 
-##### Now testing normalizing
+# SVM Model
 
-# library(caTools)
-# sample = sample.split(train_transformed,SplitRatio = 0.75) 
-# train2 =subset(train_transformed,sample ==TRUE) 
-# test2=subset(train_transformed, sample==FALSE)
-# 
-# 
-# prop.table(table(train2$Affected))
+library(caTools)
+sample = sample.split(train_transformed,SplitRatio = 0.75) 
+train1 =subset(train_transformed,sample ==TRUE) 
+test1=subset(train_transformed, sample==FALSE)
 
-# new to run
-levels(train_transformed$Affected) <- c("first_class", "second_class")
-tbag_ctrl <- trainControl(method = "repeatedcv",
-                     number = 5,
-                     repeats = 2,
+
+prop.table(table(train1$Affected))
+
+
+ctrl <- trainControl(method = "cv",
                      summaryFunction = twoClassSummary,
+                     savePredictions = TRUE,
                      classProbs = TRUE)
 
-tbag_orig_fit <- caret::train(Affected ~ .,
-                         data = train_transformed[,-c(1,2,3)],
-                         method = "treebag",
+orig_fit <- caret::train(make.names(Affected) ~ .,
+                         data = train1,
+                         method = "svmLinear",
                          verbose = FALSE,
                          metric = "ROC",
-                         trControl = tbag_ctrl)
+                         trControl = ctrl)
 
-
-
-tbag_test_roc <- function(model, data) {
+test_roc <- function(model, data) {
   
   roc(data$Affected,
       predict(model, data, type = "prob")[, "X2"])
@@ -210,116 +207,112 @@ tbag_test_roc <- function(model, data) {
 }
 
 library(pROC)
-tbag_orig_fit %>%
-  test_roc(data = test2) %>%
+orig_fit %>%
+  test_roc(data = test1) %>%
   auc()
 
+#Area under the curve: 0.5697
 
-tbag_model_weights <- ifelse(train2$Affected == 1,
-                        (1/table(train2$Affected)[1]) * 0.5,
-                        (1/table(train2$Affected)[2]) * 0.5)
+model_weights <- ifelse(train1$Affected == 1,
+                        (1/table(train1$Affected)[1]) * 0.5,
+                        (1/table(train1$Affected)[2]) * 0.5)
 
-tbag_ctrl$seeds <- tbag_orig_fit$control$seeds
+ctrl$seeds <- orig_fit$control$seeds
 
-tbag_weighted_fit <- train(make.names(Affected) ~ .,
-                      data = train2,
-                      method = "treebag",
-                      verbose = FALSE,
-                      weights = tbag_model_weights,
-                      metric = "ROC",
-                      trControl = tbag_ctrl)
-
-tbag_ctrl$sampling <- "down"
-
-tbag_down_fit <- train(make.names(Affected) ~ .,
-                  data = train2,
-                  method = "treebag",
-                  verbose = FALSE,
-                  metric = "ROC",
-                  trControl = tbag_ctrl)
-
-tbag_ctrl$sampling <- "up"
-
-tbag_up_fit <- train(make.names(Affected) ~ .,
-                data = train2,
-                method = "treebag",
-                verbose = FALSE,
-                metric = "ROC",
-                trControl = tbag_ctrl)
-
-tbag_ctrl$sampling <- "smote"
-
-tbag_smote_fit <- train(make.names(Affected) ~ .,
-                   data = train2,
-                   method = "treebag",
-                   verbose = FALSE,
-                   metric = "ROC",
-                   trControl = tbag_ctrl)
+weighted_fit <- caret::train(make.names(Affected) ~ .,
+                             data = train1,
+                             method = "svmLinear",
+                             verbose = FALSE,
+                             weights = model_weights,
+                             metric = "ROC",
+                             trControl = ctrl)
 
 
-tbag_model_list <- list(original = tbag_orig_fit,
-                   weighted = tbag_weighted_fit,
-                   down = tbag_down_fit,
-                   up = tbag_up_fit,
-                   SMOTE = tbag_smote_fit)
+ctrl$sampling <- "down"
+
+down_fit <- caret::train(make.names(Affected) ~ .,
+                         data = train1,
+                         method = "svmLinear",
+                         verbose = FALSE,
+                         metric = "ROC",
+                         trControl = ctrl)
+
+#takes a bit
+ctrl$sampling <- "up"
+
+up_fit <- caret::train(make.names(Affected) ~ .,
+                       data = train1,
+                       method = "svmLinear",
+                       verbose = FALSE,
+                       metric = "ROC",
+                       trControl = ctrl)
+
+ctrl$sampling <- "smote"
+
+smote_fit <- caret::train(make.names(Affected) ~ .,
+                          data = train1,
+                          method = "svmLinear",
+                          verbose = FALSE,
+                          metric = "ROC",
+                          trControl = ctrl)
+
+model_list <- list(orig = orig_fit,
+                   down = down_fit,
+                   up = up_fit,
+                   SMOTE = smote_fit)
 
 library(purrr)
 library(pROC)
-tbag_model_list_roc <- tbag_model_list %>%
-  map(tbag_test_roc, data = test2)
+model_list_roc <- model_list %>%
+  map(test_roc, data = test1)
 
-tbag_model_list_roc %>%
+library(dplyr)
+model_list_roc %>%
   map(auc)
 
-# $original
-# Area under the curve: 0.4972
-# 
-# $weighted
-# Area under the curve: 0.4972
+# $orig
+# Area under the curve: 0.5697
 # 
 # $down
-# Area under the curve: 0.5041
+# Area under the curve: 0.5436
 # 
 # $up
-# Area under the curve: 0.5051
+# Area under the curve: 0.5096
 # 
 # $SMOTE
-# Area under the curve: 0.547
+# Area under the curve: 0.5109
 
-
-tbag_results_list_roc <- list(NA)
+results_list_roc <- list(NA)
 num_mod <- 1
 
 library(dplyr)
-for(the_roc in tbag_model_list_roc){
+for(the_roc in model_list_roc){
   
-  tbag_results_list_roc[[num_mod]] <- 
-    data_frame(tpr = the_roc$sensitivities,
-               fpr = 1 - the_roc$specificities,
-               model = names(tbag_model_list)[num_mod])
+  results_list_roc[[num_mod]] <- 
+    tibble(tpr = the_roc$sensitivities,
+           fpr = 1 - the_roc$specificities,
+           model = names(model_list)[num_mod])
   
   num_mod <- num_mod + 1
   
 }
 
-tbag_results_df_roc <- bind_rows(tbag_results_list_roc)
+results_df_roc <- bind_rows(results_list_roc)
 
-custom_col <- c("#000000", "#009E73", "#0072B2", "#D55E00", "#CC79A7")
+custom_col <- c("#00777C", "#0072B2", "#D55E00", "#CC79A7")
 
 library(ggplot2)
-ggplot(aes(x = fpr,  y = tpr, group = model), data = tbag_results_df_roc) +
+ggplot(aes(x = fpr,  y = tpr, group = model), data = results_df_roc) +
   geom_line(aes(color = model), size = 1) +
   scale_color_manual(values = custom_col) +
   geom_abline(intercept = 0, slope = 1, color = "gray", size = 1) +
   theme_bw(base_size = 18)
 
+library(caret)
+varImp(orig_fit)
 
 
 
-
-
-
-
-
+#Finish Here
 
 
