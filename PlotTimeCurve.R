@@ -10,10 +10,14 @@ sorted <- arrange(new_df, lab_no)
 
 for(i in 1:nrow(sorted)) { sorted$index[i] <- i }
 
-#samplePlot = new_df[sample(1:nrow(new_df), 1000),]
+samplePlot = sorted[sample(1:nrow(sorted), 1000),]
 
 #choose a metabolite with a lot of unqiue values 
-apply(new_df, 2, function(x) length(unique(x)))
+apply(samplePlot, 2, function(x) length(unique(x)))
+
+
+#boxplot
+box <- ggplot(samplePlot, aes(x=index, y=Tyr)) + geom_boxplot()
 
 #plot
 library(ggplot2)
